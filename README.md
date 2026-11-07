@@ -1,0 +1,118 @@
+# Walkthru
+
+Describe a home in plain English → get a floor plan that passes real layout rules → walk
+through it in first person in 3D. Full spec: [docs/PRD.md](docs/PRD.md).
+
+```
+prompt ─► planner (Claude) ─► room program ─► solver ─► layout ─► checker ─┬─ pass ─► 2D plan + 3D walk
+              ▲                                                            │
+              └────────────── plain-English failures (≤ 4 rounds) ◄────────┘
+```
+
+**Everything talks through one layout JSON: [docs/CONTRACTS.md](docs/CONTRACTS.md).**
+Units are feet, origin top-left, rooms on a 0.5 ft grid.
+
+## Quickstart
+
+Backend (Python 3.11+):
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+cp .env.example .env              # add ANTHROPIC_API_KEY, then: export $(cat .env | xargs)
+pytest -q                         # offline smoke tests, no key needed
+uvicorn walkthru.api:app --reload --port 8000
+```
+
+No API key yet? `WALKTHRU_OFFLINE=1 uvicorn walkthru.api:app --reload` returns a canned
+3-bed plan for every prompt, so UI and 3D work never block on Claude.
+
+Frontend (Node 20+):
+
+```bash
+cd frontend
+npm install
+cp .env.example .env.local        # NEXT_PUBLIC_API_URL=http://localhost:8000
+npm run dev                       # http://localhost:3000
+```
+
+The page loads `/api/sample` on start and falls back to the bundled
+`src/lib/sample-layout.json` if the backend is down.
+
+## What works today (baseline, hour 0)
+
+Every stage runs end to end with a deliberately simple implementation. Each owner replaces
+theirs; the tests and contract keep everyone else unblocked.
+
+- **Planner**: Claude (`claude-opus-5-5`, effort `low`) via structured outputs → `RoomProgram`; fix and edit prompts.
+- **Solver**: "two rows + spine hall" packer. North row private rooms, south row public rooms,
+  4 ft hall between, every room opens on the hall. Always tiles, never overlaps. Ugly but valid.
+- **Checker**: all 7 PRD rules implemented with plain-English messages.
+- **Pipeline/API**: fix loop (4 rounds, 1 fresh retry), cached-generation fallback.
+- **2D**: SVG plan with names, dimensions, walls with door gaps, windows, entrance.
+- **3D**: walls extruded from the same wall builder, floors, lights, PointerLock + WASD,
+  AABB collision, minimap with position and heading.
+- **Eval**: `backend/eval/run_eval.py`, 30 prompts, raw Claude vs. loop.
+
+## Who owns what
+
+| | Role | Owner | Code | First TODOs |
+|---|---|---|---|---|
+| 1 | AI planner | | `backend/walkthru/planner.py`, `prompts.py` | tune prompts so first-try JSON passes; measure rounds |
+| 2 | Geometry solver | | `backend/walkthru/solver.py` | respect `adjacent_to`; avoid skinny rooms; keep rooms fixed on edits (`keep=`) |
+| 3 | Rule checker + eval | | `backend/walkthru/checker.py`, `backend/eval/` | door-on-shared-wall rule; run eval, numbers by H18 |
+| 4 | 2D plan + app UI | | `frontend/src/app/page.tsx`, `components/{PromptBox,CheckerPanel,PlanView,Minimap}.tsx` | stream fix rounds live; prompt timer; polish |
+| 5 | 3D walkthrough | | `frontend/src/components/Walkthrough.tsx`, `lib/walls.ts` | door frames, materials, furniture placeholders, fps overlay |
+| 6 | Backend + demo lead | | `backend/walkthru/api.py`, `pipeline.py`, `backend/cached/` | deploy; cache 3 backups; deck; rehearse |
+
+Pairings: 1 ↔ 3 (error format), 2 ↔ 5 (units, walls), 4 ↔ 5 (plan state, minimap), 6 ↔ everyone (API).
+
+## Repo layout
+
+```
+backend/
+  walkthru/
+    schema.py     layout JSON contract (Pydantic)         — shared, change with care
+    prompts.py    Claude system prompts                    — role 1
+    planner.py    prompt → RoomProgram, fix, edit          — role 1
+    solver.py     RoomProgram → Layout                     — role 2
+    checker.py    Layout → checks                          — role 3
+    pipeline.py   planner → solver → checker fix loop      — role 6
+    api.py        FastAPI                                  — role 6
+  eval/           prompts.txt + run_eval.py (proof slide)  — role 3
+  cached/         backup generations for the demo          — role 6
+  tests/          offline smoke tests
+frontend/         Next.js 16 + React Three Fiber + drei
+  src/lib/        types.ts (contract mirror), api.ts, walls.ts, sample-layout.json
+  src/components/ PromptBox, CheckerPanel, PlanView, Minimap, Walkthrough
+shared/           sample_layout.json (canonical sample)
+docs/             PRD.md, CONTRACTS.md
+```
+
+## Handy commands
+
+```bash
+# proof-slide numbers (from backend/, needs ANTHROPIC_API_KEY)
+python -m eval.run_eval --mode both --n 30
+
+# regenerate the shared sample after changing the solver (from backend/)
+python -c "import json; from walkthru import solver, planner, checker; l=solver.solve(planner.sample_program()); l.checks=checker.check(l); open('../shared/sample_layout.json','w').write(json.dumps(l.to_json(), indent=2))"
+cd ../frontend && npm run sync-sample
+
+# save a backup generation for the demo (backend running)
+curl -s localhost:8000/api/generate -H 'content-type: application/json' \
+  -d '{"prompt":"3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft"}' > backend/cached/3bed_office.json
+```
+
+## Timeline gates
+
+- **H2** schema locked, `/api/sample` live ✅ (this skeleton)
+- **H8** prompt → plan → walkthrough works once. If the solver can't, fall back to grid packing.
+- **H14** all must-ship goals on the deployed URL
+- **H18** code freeze, eval numbers in the deck
+
+## Git
+
+Small PRs to `main`, one per role where possible. Changing the layout JSON = edit
+`schema.py` + `types.ts` + `docs/CONTRACTS.md` together and tell the team. Never commit `.env`.

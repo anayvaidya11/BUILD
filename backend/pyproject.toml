@@ -1,0 +1,20 @@
+[project]
+name = "walkthru"
+version = "0.1.0"
+description = "Text prompt -> rule-checked floor plan -> first-person 3D walkthrough"
+requires-python = ">=3.11"
+dependencies = [
+  "anthropic>=2.6",
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "pydantic>=2.7",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.setuptools.packages.find]
+include = ["walkthru*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
