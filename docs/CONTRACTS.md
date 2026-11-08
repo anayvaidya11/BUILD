@@ -13,6 +13,11 @@ and telling the team:
 - Origin = footprint's **top-left** corner. `x` grows east, `y` grows south.
 - Rooms are axis-aligned rectangles `x, y, w, h`, snapped to a **0.5 ft grid** (the 3D wall
   builder relies on this).
+- `footprint.width_ft/depth_ft` are bounding dimensions. For an irregular footprint,
+  `footprint.outline` is an optional ordered orthogonal boundary of the union of room rectangles;
+  `footprint.holes` lists any enclosed courtyard boundaries. Vertices lie on the 0.5 ft grid.
+  When `outline` is absent, rooms must tile the full bounding rectangle as before.
+  The actual building area is the room union, excluding any holes.
 - 3D: 1 three.js unit = 1 ft. Plan `(x, y)` maps to three `(x, z)`; `y` up. Eye height 5.5 ft,
   wall height 9 ft, wall thickness 0.33 ft.
 - `"exterior"` is a pseudo-room id used in `Door.between` for the front door.

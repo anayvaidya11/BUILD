@@ -12,6 +12,8 @@ import math
 from typing import Callable
 
 from .schema import EXTERIOR, Check, Layout, Room
+from .geometry.geom import Rect, exterior_edges
+from .geometry.footprint import outline as room_outline
 
 EPS = 0.01
 MIN_HALL_W = 3.0
@@ -40,8 +42,13 @@ def shared_wall(a: Room, b: Room) -> float:
 
 
 def touches_exterior(r: Room, layout: Layout) -> bool:
-    fp = layout.footprint
-    return r.x < EPS or r.y < EPS or abs(r.x + r.w - fp.width_ft) < EPS or abs(r.y + r.h - fp.depth_ft) < EPS
+    return bool(_edges(r, layout))
+
+
+def _edges(r: Room, layout: Layout):
+    rects = {room.id: Rect(room.x, room.y, room.w, room.h) for room in layout.rooms}
+    return exterior_edges(rects[r.id], layout.footprint.width_ft,
+                          layout.footprint.depth_ft, rects.values())
 
 
 def _door_valid(d, layout: Layout) -> bool:
@@ -52,12 +59,8 @@ def _door_valid(d, layout: Layout) -> bool:
         r = layout.room(b if a == EXTERIOR else a)
         if r is None:
             return False
-        segments = []
-        fp = layout.footprint
-        if abs(r.y) < EPS: segments.append(("h", 0, r.x, r.x + r.w))
-        if abs(r.y + r.h - fp.depth_ft) < EPS: segments.append(("h", fp.depth_ft, r.x, r.x + r.w))
-        if abs(r.x) < EPS: segments.append(("v", 0, r.y, r.y + r.h))
-        if abs(r.x + r.w - fp.width_ft) < EPS: segments.append(("v", fp.width_ft, r.y, r.y + r.h))
+        segments = [("h" if orient == "horizontal" else "v", c, lo, hi)
+                    for _, orient, c, lo, hi in _edges(r, layout)]
     else:
         ra, rb = layout.room(a), layout.room(b)
         if ra is None or rb is None:
@@ -75,6 +78,16 @@ def _door_valid(d, layout: Layout) -> bool:
         if abs(cross - line) < EPS and center - d.width_ft / 2 >= lo - EPS and center + d.width_ft / 2 <= hi + EPS:
             return True
     return False
+
+
+def _window_valid(w, layout: Layout) -> bool:
+    r = layout.room(w.room)
+    if r is None or not math.isfinite(w.offset_ft) or not math.isfinite(w.width_ft) or w.width_ft <= 0:
+        return False
+    start = r.x if w.wall in {"north", "south"} else r.y
+    return any(side == w.wall and w.offset_ft + start >= lo - EPS
+               and w.offset_ft + start + w.width_ft <= hi + EPS
+               for side, _, _, lo, hi in _edges(r, layout))
 
 
 def _graph(layout: Layout) -> dict[str, set[str]]:
@@ -114,7 +127,24 @@ def no_overlap(layout: Layout) -> list[str]:
                 errs.append(f"{a.name} and {b.name} overlap by {ov:.0f} sq ft")
         if a.x < -EPS or a.y < -EPS or a.x + a.w > fp.width_ft + EPS or a.y + a.h > fp.depth_ft + EPS:
             errs.append(f"{a.name} extends outside the {fp.width_ft:g}x{fp.depth_ft:g} ft footprint")
-    if all(r.w > 0 and r.h > 0 for r in rs):
+    if fp.outline:
+        try:
+            actual, holes = room_outline({r.id: Rect(r.x, r.y, r.w, r.h) for r in rs})
+            given = [(p.x, p.y) for p in fp.outline]
+            expected = [(p["x"], p["y"]) for p in actual]
+            def same_ring(a, b):
+                return len(a) == len(b) and any(a == b[i:] + b[:i] or a == (b[i:] + b[:i])[::-1]
+                                                     for i in range(len(b)))
+            declared_holes = [[(p.x, p.y) for p in ring] for ring in fp.holes]
+            actual_holes = [[(p["x"], p["y"]) for p in ring] for ring in holes]
+            holes_match = len(declared_holes) == len(actual_holes) and all(
+                any(same_ring(ring, candidate) for candidate in actual_holes)
+                for ring in declared_holes)
+            if not same_ring(given, expected) or not holes_match:
+                errs.append("Footprint outline and holes do not match the room union")
+        except ValueError as exc:
+            errs.append(f"Invalid irregular footprint: {exc}")
+    elif all(r.w > 0 and r.h > 0 for r in rs):
         covered = sum(r.area for r in rs)
         missing = fp.width_ft * fp.depth_ft - covered
         if missing > EPS:
@@ -133,6 +163,13 @@ def contract_integrity(layout: Layout) -> list[str]:
     for name, value in vals:
         if not math.isfinite(value) or abs(value / GRID - round(value / GRID)) > EPS:
             errs.append(f"{name} must be finite and on the 0.5 ft grid")
+    for name, value in (("footprint width", layout.footprint.width_ft),
+                        ("footprint depth", layout.footprint.depth_ft),
+                        *((f"{r.name} target area", r.target_sqft) for r in layout.rooms)):
+        if not math.isfinite(value) or value <= 0:
+            errs.append(f"{name} must be finite and positive")
+    if layout.requested_sqft is not None and (not math.isfinite(layout.requested_sqft) or layout.requested_sqft <= 0):
+        errs.append("Requested house area must be finite and positive")
     return errs
 
 
@@ -145,6 +182,9 @@ def door_geometry(layout: Layout) -> list[str]:
              and abs(d.x - layout.entrance.x) < EPS and abs(d.y - layout.entrance.y) < EPS]
     if not front:
         errs.append(f"Front door must sit at entrance ({layout.entrance.x:g}, {layout.entrance.y:g})")
+    for w in layout.windows:
+        if not _window_valid(w, layout):
+            errs.append(f"Window for {w.room} on {w.wall} wall must fit entirely on that room's exterior wall")
     return errs
 
 
@@ -164,6 +204,8 @@ def bedroom_exterior_wall(layout: Layout) -> list[str]:
                 errs.append(f"{r.name} has no exterior wall (needs one for a window)")
             if r.id not in door_rooms:
                 errs.append(f"{r.name} has no door")
+            if not any(w.room == r.id and _window_valid(w, layout) for w in layout.windows):
+                errs.append(f"{r.name} has no valid exterior window")
     return errs
 
 
@@ -205,7 +247,7 @@ def sizes_match(layout: Layout) -> list[str]:
         if abs(r.area - r.target_sqft) / r.target_sqft > SIZE_TOL:
             errs.append(f"{r.name} is {r.area:.0f} sq ft but was asked to be {r.target_sqft:.0f} (more than 10% off)")
     if layout.requested_sqft:
-        total = layout.footprint.width_ft * layout.footprint.depth_ft
+        total = sum(r.area for r in layout.rooms) if layout.footprint.outline else layout.footprint.width_ft * layout.footprint.depth_ft
         if abs(total - layout.requested_sqft) / layout.requested_sqft > SIZE_TOL:
             errs.append(f"House is {total:.0f} sq ft but {layout.requested_sqft:.0f} was requested (more than 10% off)")
     return errs

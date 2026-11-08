@@ -88,8 +88,31 @@ def shared_edge(a: Rect, b: Rect):
     return None
 
 
-def exterior_edges(r: Rect, W: float, D: float):
+def exterior_edges(r: Rect, W: float, D: float, rooms=None):
     """Edges of r that lie on the footprint boundary: list of (side, orientation, coord, s0, s1)."""
+    if rooms is not None:
+        out = []
+        for side, orient, coord, start, end in (
+            ("north", "horizontal", r.y, r.x, r.x2),
+            ("south", "horizontal", r.y2, r.x, r.x2),
+            ("west", "vertical", r.x, r.y, r.y2),
+            ("east", "vertical", r.x2, r.y, r.y2),
+        ):
+            spans = [(start, end)]
+            for other in rooms:
+                if other is r:
+                    continue
+                touching = (abs(other.y2 - coord) < EPS if side == "north" else
+                            abs(other.y - coord) < EPS if side == "south" else
+                            abs(other.x2 - coord) < EPS if side == "west" else
+                            abs(other.x - coord) < EPS)
+                if not touching:
+                    continue
+                a, b = (other.x, other.x2) if orient == "horizontal" else (other.y, other.y2)
+                spans = [(lo, hi) for s0, s1 in spans for lo, hi in
+                         ((s0, min(s1, a)), (max(s0, b), s1)) if hi - lo > EPS]
+            out.extend((side, orient, coord, a, b) for a, b in spans)
+        return out
     out = []
     if abs(r.y) < EPS:
         out.append(("north", "horizontal", 0.0, r.x, r.x2))

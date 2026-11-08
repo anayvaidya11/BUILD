@@ -11,6 +11,38 @@ from solver_programs import MESSY, PROGRAMS, SAMPLE
 from walkthru import checker, solver
 from walkthru.schema import EXTERIOR, Layout, RoomProgram
 
+
+@pytest.mark.parametrize("shape", ["L", "T", "U"])
+def test_requested_shape_has_valid_irregular_footprint(shape):
+    from walkthru import planner
+    from walkthru.geometry.footprint import outline
+    from walkthru.geometry.geom import Rect
+
+    program = planner.sample_program()
+    program.notes = f"{shape}-shaped house"
+    layout = solver.solve(program)
+    assert layout.footprint.outline is not None
+    rects = {r.id: Rect(r.x, r.y, r.w, r.h) for r in layout.rooms}
+    boundary, holes = outline(rects)
+    assert [p.model_dump() for p in layout.footprint.outline] == boundary
+    assert holes == []
+    assert all(c.pass_ for c in checker.check(layout))
+    layout.footprint.outline[1].x += 0.5
+    assert "no_overlap_in_footprint" in {c.rule for c in checker.check(layout) if not c.pass_}
+
+
+def test_footprint_geometry_identifies_courtyard_hole():
+    from walkthru.geometry.footprint import outline
+    from walkthru.geometry.geom import Rect
+
+    rooms = {
+        "north": Rect(0, 0, 10, 2), "south": Rect(0, 8, 10, 2),
+        "west": Rect(0, 2, 2, 6), "east": Rect(8, 2, 2, 6),
+    }
+    boundary, holes = outline(rooms)
+    assert len(boundary) == 4
+    assert len(holes) == 1
+    assert {tuple(p.values()) for p in holes[0]} == {(2.0, 2.0), (8.0, 2.0), (8.0, 8.0), (2.0, 8.0)}
 GRID = 0.5
 TOL = 0.01
 

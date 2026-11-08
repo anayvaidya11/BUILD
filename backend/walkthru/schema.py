@@ -31,14 +31,16 @@ Wall = Literal["north", "south", "east", "west"]
 EXTERIOR = "exterior"  # pseudo-room id used in Door.between for doors to the outside
 
 
-class Footprint(BaseModel):
-    width_ft: float
-    depth_ft: float
-
-
 class Point(BaseModel):
     x: float
     y: float
+
+
+class Footprint(BaseModel):
+    width_ft: float
+    depth_ft: float
+    outline: list[Point] | None = None
+    holes: list[list[Point]] = Field(default_factory=list)
 
 
 # ---------- planner output (role 1) ----------

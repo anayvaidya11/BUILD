@@ -47,12 +47,15 @@ the first solve (`tests/test_prompts.py`, slowest 0.36 s).
 | Pantry, mudroom, garage, family room, foyer | No such RoomType, so the planner uses the nearest type and the **name**; placement follows the name (pantry off the kitchen, garage at the end of the hall), output keeps the planner's type |
 | "Formal / separate dining", "closed kitchen" | Read from `notes`: those rooms get 4 ft cased openings instead of wide open plan |
 | "Office nook" | Small offices stack into a band column instead of becoming a sliver |
-| Two stories, basement, pool, porch, L-shaped, a specific lot | Not built (PRD non-goals); the planner flattens to one story, the solver picks the footprint |
+| Two stories, basement, pool, porch, a specific lot | Not built (PRD non-goals); the planner flattens to one story, the solver picks the footprint |
+| L-, T-, or U-shaped house | If planner `notes` preserves this request, the solver pulls hall-side rooms outward, derives an orthogonal outline, and replans openings. If a valid shape cannot be made it returns the rectangular baseline with a warning. |
 | "Split-bedroom plan", "office near the entry" | Approximated: all bedrooms share one wing; other `adjacent_to` pairs are a soft preference |
 
 Known limits: a program dominated by a few large suites can't balance across the two sides
 of the hallway, which gives one long bedroom (e.g. 27' × 11' for "3 bed, 3 bath, each bedroom
 with its own bath"); very large houses (3,500+ sq ft) come out long and narrow.
+Enclosed courtyards still require a multi-rectangle logical-room representation or an explicit
+outdoor void; the current one-rectangle-per-room contract cannot place a hole inside a room.
 
 ## Edits (`keep=`)
 
