@@ -144,3 +144,27 @@ class GenerateResponse(BaseModel):
     attempts: int = 1
     elapsed_s: float
     cached: bool = False
+
+
+# ---------- conversational design (POST /api/chat) ----------
+
+ChatAction = Literal["ask", "answer", "edit", "generate"]
+
+
+class ChatMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str
+
+
+class ChatRequest(BaseModel):
+    messages: list[ChatMessage] = Field(description="whole conversation so far; the last item is the user's newest message")
+    program: Optional[RoomProgram] = None  # null before a house exists
+    layout: Optional[Layout] = None
+
+
+class ChatResponse(BaseModel):
+    action: ChatAction
+    reply: str = Field(description="what the agent says, shown in the chat")
+    options: list[str] = Field(default_factory=list, description="0-4 short tappable answers / suggested next messages")
+    brief: Optional[str] = Field(default=None, description="for 'generate': the refined house brief to pass to /api/generate")
+    result: Optional[GenerateResponse] = Field(default=None, description="for 'edit': the edited plan")

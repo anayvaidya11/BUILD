@@ -11,8 +11,8 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
-from . import pipeline, planner, solver, checker
-from .schema import EditRequest, GenerateRequest, GenerateResponse
+from . import chat, pipeline, planner, solver, checker
+from .schema import ChatRequest, ChatResponse, EditRequest, GenerateRequest, GenerateResponse
 
 logging.basicConfig(level=logging.INFO)
 CACHE_DIR = Path(__file__).resolve().parent.parent / "cached"
@@ -89,4 +89,14 @@ def edit(req: EditRequest):
         return pipeline.edit(req.program, req.layout, req.instruction)
     except Exception as e:
         logging.exception("edit failed")
+        raise HTTPException(500, str(e))
+
+
+@app.post("/api/chat", response_model=ChatResponse, response_model_by_alias=True)
+def chat_turn(req: ChatRequest):
+    """One chat turn: ask / answer / edit (runs pipeline.edit) / generate (returns a brief for /api/generate)."""
+    try:
+        return chat.respond(req)
+    except Exception as e:
+        logging.exception("chat failed")
         raise HTTPException(500, str(e))

@@ -30,6 +30,18 @@ export interface GenerateResponse {
   attempts: number; elapsed_s: number; cached: boolean;
 }
 
+// POST /api/chat
+export type ChatAction = "ask" | "answer" | "edit" | "generate";
+export interface ChatMessage { role: "user" | "assistant"; content: string }
+export interface ChatRequest { messages: ChatMessage[]; program: RoomProgram | null; layout: Layout | null }
+export interface ChatResponse {
+  action: ChatAction;
+  reply: string;
+  options: string[];                 // 0-4 tappable answers / suggested next messages
+  brief: string | null;              // "generate": pass to /api/generate as {prompt: brief}
+  result: GenerateResponse | null;   // "edit": the edited plan
+}
+
 export const EYE_HEIGHT_FT = 5.5;
 export const WALL_HEIGHT_FT = 9;
 export const EXTERIOR = "exterior";

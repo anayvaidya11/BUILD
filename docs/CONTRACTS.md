@@ -88,6 +88,7 @@ Base URL `NEXT_PUBLIC_API_URL` (default `http://localhost:8000`).
 | GET | `/api/sample` | | `GenerateResponse` (no Claude call) |
 | POST | `/api/generate[?cached=true]` | `{prompt}` | `GenerateResponse` |
 | POST | `/api/edit` | `{program, layout, instruction}` | `GenerateResponse` |
+| POST | `/api/chat` | `ChatRequest` | `ChatResponse` (see below) |
 
 ```ts
 GenerateResponse = {
@@ -102,3 +103,32 @@ On generation failure the API serves a validated file from `backend/cached/`
 with `cached: true` (disable with `WALKTHRU_CACHE_FALLBACK=0`). It prefers a
 backup matching explicit bedroom, bathroom, office, and square-footage requests;
 if none match, it chooses any valid backup. `?cached=true` uses the same selection.
+
+### Chat (`POST /api/chat`)
+
+One turn of the design conversation. The client sends the whole conversation each time,
+plus the current plan (both `null` before a house exists); the server decides what to do.
+
+```ts
+ChatRequest  = { messages: {role: "user" | "assistant", content: string}[],  // last = newest user message
+                 program: RoomProgram | null, layout: Layout | null }
+ChatResponse = { action: "ask" | "answer" | "edit" | "generate",
+                 reply: string,             // shown in the chat
+                 options: string[],         // 0-4 tappable answers ("3 bedrooms", room names) or next-step ideas
+                 brief: string | null,      // generate: refined brief -> POST /api/generate {prompt: brief}
+                 result: GenerateResponse | null }  // edit: the edited plan (already run through pipeline.edit)
+```
+
+- **ask**: brief too vague (no size and no bedroom count) or the change is ambiguous
+  ("make it bigger": which room?). At most 2 questions in a row before a house exists; then it
+  generates with defaults and says what it assumed. Tapping an option sends it as the next user message.
+- **generate**: no house yet and the brief is clear enough, or the user wants a different house
+  ("start over", "new house"). The client calls `/api/generate` with `brief`.
+- **edit**: a concrete change. The server derives a one-sentence instruction and runs
+  `pipeline.edit`; `reply` gives exact before/after sizes and check status. If the edit fails
+  the response is `answer` explaining why (never a 500).
+- **answer**: questions about the plan (room sizes, total sq ft), answered from the layout.
+
+With an API key, Claude decides in one structured-output call (`prompts.CHAT_SYSTEM`). With
+`WALKTHRU_OFFLINE=1` keyword heuristics stand in; offline edits come back unchanged (the offline
+planner doesn't edit) and the reply says so.
