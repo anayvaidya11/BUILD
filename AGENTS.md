@@ -34,15 +34,15 @@ Humans over agents. Only the team lead (fill in their @login here) reassigns wor
 
 ## 4. Who owns what
 
-Fill in the Owner column at kickoff. The file paths match the README.
+The file paths match the README. Roles 4 and 6 have no owner yet: until they do, ask on the board before editing their files.
 
 | # | Role | Owner (GitHub login) | Code |
 |---|---|---|---|
 | 1 | AI planner | @suhaant (Suhaan) | `backend/walkthru/planner.py`, `backend/walkthru/prompts.py` |
-| 2 | Geometry solver | | `backend/walkthru/solver.py` |
-| 3 | Rule checker + eval | | `backend/walkthru/checker.py`, `backend/eval/` |
-| 4 | 2D plan + app UI | | `frontend/src/app/page.tsx`, `frontend/src/components/{PromptBox,CheckerPanel,PlanView,Minimap}.tsx` |
-| 5 | 3D walkthrough | | `frontend/src/components/Walkthrough.tsx`, `frontend/src/lib/walls.ts` |
-| 6 | Backend + demo lead | | `backend/walkthru/api.py`, `backend/walkthru/pipeline.py`, `backend/cached/` |
+| 2 | Geometry solver | @ayanbigb (Ayan) | `backend/walkthru/solver.py` |
+| 3 | Rule checker + eval | @jimmxchen (Jimmy) | `backend/walkthru/checker.py`, `backend/eval/` |
+| 4 | 2D plan + app UI | unassigned | `frontend/src/app/page.tsx`, `frontend/src/components/{PromptBox,CheckerPanel,PlanView,Minimap}.tsx` |
+| 5 | 3D walkthrough | @anayvaidya11 (Anay) | `frontend/src/components/Walkthrough.tsx`, `frontend/src/lib/walls.ts` |
+| 6 | Backend + demo lead | unassigned | `backend/walkthru/api.py`, `backend/walkthru/pipeline.py`, `backend/cached/` |
 
 Shared, change with care and announce on the board: `backend/walkthru/schema.py`, `frontend/src/lib/types.ts`, `docs/CONTRACTS.md`, `shared/sample_layout.json`.
