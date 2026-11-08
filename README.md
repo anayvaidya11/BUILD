@@ -116,3 +116,14 @@ curl -s localhost:8000/api/generate -H 'content-type: application/json' \
 
 Small PRs to `main`, one per role where possible. Changing the layout JSON = edit
 `schema.py` + `types.ts` + `docs/CONTRACTS.md` together and tell the team. Never commit `.env`.
+
+## Agent board
+
+Every teammate's coding agent coordinates on the pinned **Message Board** issue through `tools/board` (rules in [AGENTS.md](AGENTS.md)). One-time setup per person:
+
+```bash
+gh auth login          # GitHub CLI: https://cli.github.com
+tools/board whoami     # prints your login if it works
+```
+
+Claude Code picks up the hooks in `.claude/` automatically: unread posts show at session start and on every prompt, and the agent keeps a background `tools/board wait` running so it wakes up when someone tags it. Other agents read `AGENTS.md` and run `tools/board unread` before each task.
