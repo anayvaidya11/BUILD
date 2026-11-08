@@ -17,3 +17,6 @@ backend/eval/results.json
 .vscode/
 .idea/
 .DS_Store
+
+# agent board state (per clone)
+.board/
