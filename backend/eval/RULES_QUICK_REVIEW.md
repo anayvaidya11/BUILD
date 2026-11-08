@@ -27,7 +27,8 @@
 - ◇ Honor requested adjacency and separation; zone public, private, and service rooms deliberately.
 - ◇ Prefer useful daylight, exterior frontage, privacy, sensible furniture space, and efficient circulation.
 - ◇ Offer distinct circulation and zoning schemes, not just mirrored plans.
-- ◻ To permit L, T, U, stepped, or courtyard building outlines, add an orthogonal footprint polygon (and explicit holes for courtyards) to the shared JSON; compute area from the polygon and update the solver, checker, 2D view, and 3D walls together.
+- ✅ Optional orthogonal outline supports generated L, T, and U-like building silhouettes; area and openings use the room union.
+- ◻ Generate courtyard layouts with explicit holes and complete 2D/3D exterior styling.
 - ◻ For an L-shaped *room*, represent one room as connected rectangular pieces or an orthogonal polygon; check connectedness, area, openings, and walls as one room.
 
 ## Additional approved house rules
