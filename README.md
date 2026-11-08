@@ -46,8 +46,9 @@ Every stage runs end to end with a deliberately simple implementation. Each owne
 theirs; the tests and contract keep everyone else unblocked.
 
 - **Planner**: Claude (`claude-opus-5-5`, effort `low`) via structured outputs → `RoomProgram`; fix and edit prompts.
-- **Solver**: "two rows + spine hall" packer. North row private rooms, south row public rooms,
-  4 ft hall between, every room opens on the hall. Always tiles, never overlaps. Ugly but valid.
+- **Solver**: open-plan public block + hallway spine with a band of rooms on each side; picks the
+  best of a few hundred candidates against the checker's rules (incl. door geometry) in under 0.4 s;
+  keeps unchanged rooms in place on edits. See `backend/walkthru/geometry/README.md`.
 - **Checker**: all 7 PRD rules implemented with plain-English messages.
 - **Pipeline/API**: fix loop (4 rounds, 1 fresh retry), cached-generation fallback.
 - **2D**: SVG plan with names, dimensions, walls with door gaps, windows, entrance.
