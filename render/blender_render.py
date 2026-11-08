@@ -1155,7 +1155,23 @@ def build_scene(manifest, payload):
             if name == "planter":
                 place(trng.choice(["potted_plant_01", "potted_plant_02"]), cx, cy, 0, trng.uniform(0, 360), "h", 1.15, name=f"plant_{k}"); continue
             if name == "media console":
-                place("modern_wooden_cabinet", cx, cy, 0, rot, "len", long_m * 0.95, name=f"media_{k}")
+                # mid-century walnut console with a slatted front (the scanned cabinet's tambour doors
+                # are flexible strips that only work on their animation curves)
+                body = next(p for p in parts if p["name"] == "media console")
+                x0, y0, _, x1, y1, _ = bounds(body)
+                Fm = Frame(x0, y0, x1, y1, it["front"])
+                Wm_, Dm_ = Fm.W, Fm.D
+                Fm.box(f"mc_body{k}", 0, Wm_, 0, Dm_ - 0.02, 0.16, 0.58, M["walnut"], 0.01)
+                Fm.box(f"mc_top{k}", -0.01, Wm_ + 0.01, -0.01, Dm_ + 0.005, 0.58, 0.61, M["walnut"], 0.006)
+                for u in (0.08, Wm_ - 0.08):
+                    for v in (0.06, Dm_ - 0.08):
+                        Fm.box(f"mc_leg{k}{u:.2f}{v:.2f}", u - 0.018, u + 0.018, v - 0.018, v + 0.018, 0, 0.16, M["black"], 0.004)
+                n_sl = int((Wm_ - 0.06) / 0.035)
+                for i in range(n_sl):
+                    u = 0.03 + i * (Wm_ - 0.06) / n_sl
+                    Fm.box(f"mc_slat{k}{i}", u + 0.004, u + (Wm_ - 0.06) / n_sl - 0.004, Dm_ - 0.03, Dm_, 0.19, 0.55, M["oak"], 0.003)
+                cx2, cy2 = Fm.world(Wm_ * 0.78, Dm_ / 2)
+                place("ceramic_vase_02", cx2, cy2, 0.61, 0, "h", 0.3, name=f"mc_vase{k}")
                 for p in parts:
                     if p["name"] == "tv":
                         build_tv(k, p)
@@ -1538,12 +1554,18 @@ def debug_objects(payload: dict, x0: float, y0: float, x1: float, y1: float) -> 
     build_scene(manifest, payload)
     dg = bpy.context.evaluated_depsgraph_get()
     out = {}
+    from mathutils import Vector
     for inst in dg.object_instances:
-        loc = inst.matrix_world.translation
+        ob = inst.object
+        if ob.type == "MESH":
+            pts = [inst.matrix_world @ Vector(c) for c in ob.bound_box]
+            loc = sum(pts, Vector()) / 8
+        else:
+            loc = inst.matrix_world.translation
         if x0 < loc.x < x1 and y0 < loc.y < y1 and loc.z < 1.2:
-            name = (inst.parent.name if inst.is_instance and inst.parent else inst.object.name)
+            name = f"{inst.parent.name if inst.is_instance and inst.parent else '-'} :: {inst.object.name} :: {inst.object.data.name if inst.object.data else ''}"
             out[name] = out.get(name, 0) + 1
-    return sorted(out.items(), key=lambda kv: -kv[1])[:40]
+    return sorted(out.items(), key=lambda kv: -kv[1])[:60]
 
 
 @app.function(volumes={ASSETS: assets_vol}, timeout=600, cpu=4, memory=16384)
