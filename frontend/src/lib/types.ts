@@ -5,8 +5,8 @@ export type RoomType =
   | "living" | "kitchen" | "dining" | "bedroom" | "primary_bedroom" | "bathroom"
   | "office" | "laundry" | "entry" | "hall" | "closet";
 
-export interface Footprint { width_ft: number; depth_ft: number }
 export interface Point { x: number; y: number }
+export interface Footprint { width_ft: number; depth_ft: number; outline?: Point[] | null; holes?: Point[][] }
 
 export interface RoomSpec {
   id: string; type: RoomType; name: string; target_sqft: number; adjacent_to: string[];

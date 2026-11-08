@@ -168,7 +168,7 @@ def plan_doors(rects: Dict[str, Rect], roles: Roles, W: float, D: float,
     """Returns (doors, entrance) where entrance = {"x","y","room","side"}."""
     T = roles.types
     er = rects[roles.entrance]
-    edges = exterior_edges(er, W, D)
+    edges = exterior_edges(er, W, D, rects.values())
     edge = next((e for e in edges if e[0] == entry_side), None)
     if edge is None:  # shouldn't happen; fall back to the room's longest outside wall
         edge = max(edges, key=lambda e: e[4] - e[3]) if edges else ("south", "horizontal", er.y2, er.x, er.x2)
@@ -238,7 +238,7 @@ def plan_windows(rects: Dict[str, Rect], types: Dict[str, str], W: float, D: flo
             continue
         max_n, per_edge, width, sill, head = spec
         count = 0
-        for side, orient, c, s0, s1 in sorted(exterior_edges(r, W, D), key=lambda e: -(e[4] - e[3])):
+        for side, orient, c, s0, s1 in sorted(exterior_edges(r, W, D, rects.values()), key=lambda e: -(e[4] - e[3])):
             if count >= max_n:
                 break
             length = s1 - s0
