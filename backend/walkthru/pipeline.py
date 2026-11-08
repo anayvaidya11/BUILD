@@ -21,11 +21,13 @@ class GenerationFailed(RuntimeError):
     pass
 
 
-def _loop(program: RoomProgram, keep: Layout | None = None) -> tuple[Layout, RoomProgram, list[FixRound]]:
+def _loop(program: RoomProgram, keep: Layout | None = None, prompt: str | None = None) -> tuple[Layout, RoomProgram, list[FixRound]]:
     rounds: list[FixRound] = []
     for i in range(1, MAX_ROUNDS + 1):
         layout = solver.solve(program, keep=keep)
         layout.checks = checker.check(layout)
+        if prompt is not None:
+            layout.checks.append(checker.check_prompt(prompt, layout))
         failed = checker.failures(layout.checks)
         if not failed:
             return layout, program, rounds
@@ -42,7 +44,7 @@ def generate(prompt: str) -> GenerateResponse:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         program = planner.plan(prompt)
         try:
-            layout, program, rounds = _loop(program)
+            layout, program, rounds = _loop(program, prompt=prompt)
             return GenerateResponse(
                 layout=layout, program=program, rounds=all_rounds + rounds,
                 attempts=attempt, elapsed_s=round(time.perf_counter() - t0, 2),

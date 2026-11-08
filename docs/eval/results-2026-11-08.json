@@ -1,0 +1,607 @@
+{
+  "metadata": {
+    "model": "claude-opus-5-5",
+    "effort": "low",
+    "prompt_count": 30,
+    "workers": 6
+  },
+  "raw": {
+    "summary": {
+      "n": 30,
+      "generation_errors": 0,
+      "plans_with_violations_pct": 73.3,
+      "plans_passing_pct": 26.7,
+      "violations_by_rule": {
+        "no_overlap_in_footprint": 3,
+        "door_geometry": 11,
+        "all_rooms_reachable": 13,
+        "bedroom_exterior_wall": 8,
+        "public_bathroom": 10,
+        "min_hall_and_door_width": 7,
+        "sizes_within_10pct": 9,
+        "prompt_fidelity": 2
+      },
+      "mean_s": 19.3
+    },
+    "rows": [
+      {
+        "prompt": "3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft",
+        "ok": false,
+        "failed": [
+          "no_overlap_in_footprint",
+          "door_geometry",
+          "all_rooms_reachable",
+          "bedroom_exterior_wall",
+          "public_bathroom",
+          "min_hall_and_door_width",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 13.570763199822977
+      },
+      {
+        "prompt": "2 bed, 1 bath cottage, 900 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom"
+        ],
+        "error": null,
+        "s": 9.397981100017205
+      },
+      {
+        "prompt": "4 bedroom family home, 3 baths, big living room, 2,400 sq ft",
+        "ok": false,
+        "failed": [
+          "bedroom_exterior_wall"
+        ],
+        "error": null,
+        "s": 31.981647899840027
+      },
+      {
+        "prompt": "1 bed, 1 bath studio-style home with an office, 750 sq ft",
+        "ok": false,
+        "failed": [
+          "no_overlap_in_footprint",
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom",
+          "min_hall_and_door_width",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 9.5659936000593
+      },
+      {
+        "prompt": "3 bed, 2 bath ranch with laundry room, 1,600 sq ft",
+        "ok": false,
+        "failed": [
+          "min_hall_and_door_width"
+        ],
+        "error": null,
+        "s": 22.76573250000365
+      },
+      {
+        "prompt": "5 bed, 3 bath, formal dining, 3,000 sq ft",
+        "ok": false,
+        "failed": [
+          "bedroom_exterior_wall"
+        ],
+        "error": null,
+        "s": 29.740287099964917
+      },
+      {
+        "prompt": "2 bed, 2 bath, open plan kitchen and living, 1,200 sq ft",
+        "ok": false,
+        "failed": [
+          "all_rooms_reachable",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 9.372094700112939
+      },
+      {
+        "prompt": "3 bedroom, 2.5 bath, two home offices, 2,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 24.661028299946338
+      },
+      {
+        "prompt": "starter home: 2 bedrooms, 1 bathroom, small kitchen, 1,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 9.200832000002265
+      },
+      {
+        "prompt": "4 bed, 2 bath, kitchen opens onto dining, 2,100 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 20.353405500063673
+      },
+      {
+        "prompt": "retirement home, 2 bed, 2 bath, large primary suite, 1,500 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom",
+          "min_hall_and_door_width",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 15.248804799979553
+      },
+      {
+        "prompt": "3 bed, 1 bath, eat-in kitchen, 1,300 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 15.642994199879467
+      },
+      {
+        "prompt": "4 bed, 3 bath with a guest suite, 2,600 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 15.439339000033215
+      },
+      {
+        "prompt": "1 bedroom, 1 bath, big living room, 800 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "bedroom_exterior_wall",
+          "min_hall_and_door_width",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 12.59418709995225
+      },
+      {
+        "prompt": "3 bed, 2 bath, mudroom laundry, office, 1,900 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 27.555687500163913
+      },
+      {
+        "prompt": "2 bed, 1 bath, dining room, 1,100 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "bedroom_exterior_wall",
+          "public_bathroom",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 9.980259199859574
+      },
+      {
+        "prompt": "5 bedroom, 4 bath, office and laundry, 3,200 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 27.15355909988284
+      },
+      {
+        "prompt": "3 bed, 2 bath modern farmhouse, open kitchen, 2,200 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom"
+        ],
+        "error": null,
+        "s": 14.156025700038299
+      },
+      {
+        "prompt": "4 bed, 2.5 bath, separate dining and living, 2,300 sq ft",
+        "ok": false,
+        "failed": [
+          "prompt_fidelity"
+        ],
+        "error": null,
+        "s": 25.802591900108382
+      },
+      {
+        "prompt": "2 bed, 2 bath with home gym used as office, 1,400 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 11.949811900034547
+      },
+      {
+        "prompt": "3 bed, 3 bath, each bedroom with its own bath, 2,000 sq ft",
+        "ok": false,
+        "failed": [
+          "public_bathroom"
+        ],
+        "error": null,
+        "s": 21.259993199957535
+      },
+      {
+        "prompt": "small 2 bed, 1 bath, 850 sq ft",
+        "ok": false,
+        "failed": [
+          "min_hall_and_door_width",
+          "prompt_fidelity"
+        ],
+        "error": null,
+        "s": 8.595395600190386
+      },
+      {
+        "prompt": "3 bed, 2 bath, large kitchen island, 1,750 sq ft",
+        "ok": false,
+        "failed": [
+          "min_hall_and_door_width"
+        ],
+        "error": null,
+        "s": 34.857084800023586
+      },
+      {
+        "prompt": "4 bedroom, 3 bath, two living areas, 2,800 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "bedroom_exterior_wall"
+        ],
+        "error": null,
+        "s": 24.7573869000189
+      },
+      {
+        "prompt": "1 bed, 1 bath, office, laundry, 950 sq ft",
+        "ok": false,
+        "failed": [
+          "no_overlap_in_footprint",
+          "all_rooms_reachable"
+        ],
+        "error": null,
+        "s": 9.019891200121492
+      },
+      {
+        "prompt": "3 bed, 2 bath, 1,500 sq ft, kitchen next to living",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 17.645829299930483
+      },
+      {
+        "prompt": "6 bed, 4 bath, 3,600 sq ft",
+        "ok": false,
+        "failed": [
+          "bedroom_exterior_wall"
+        ],
+        "error": null,
+        "s": 35.32846140000038
+      },
+      {
+        "prompt": "2 bed, 1 bath, open kitchen, office nook, 1,050 sq ft",
+        "ok": false,
+        "failed": [
+          "door_geometry",
+          "all_rooms_reachable",
+          "public_bathroom",
+          "sizes_within_10pct"
+        ],
+        "error": null,
+        "s": 9.629520199960098
+      },
+      {
+        "prompt": "3 bed, 2 bath split-bedroom plan, 1,850 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "s": 25.086386799812317
+      },
+      {
+        "prompt": "4 bed, 3 bath, home office, laundry, dining, 2,500 sq ft",
+        "ok": false,
+        "failed": [
+          "bedroom_exterior_wall"
+        ],
+        "error": null,
+        "s": 36.25216529984027
+      }
+    ]
+  },
+  "loop": {
+    "summary": {
+      "n": 30,
+      "generation_errors": 0,
+      "plans_with_violations_pct": 0.0,
+      "plans_passing_pct": 100.0,
+      "violations_by_rule": {},
+      "mean_s": 8.0,
+      "mean_fix_rounds": 0.2
+    },
+    "rows": [
+      {
+        "prompt": "3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.634992999956012
+      },
+      {
+        "prompt": "2 bed, 1 bath cottage, 900 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 1,
+        "attempts": 1,
+        "s": 9.310984200099483
+      },
+      {
+        "prompt": "4 bedroom family home, 3 baths, big living room, 2,400 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 7.53311840002425
+      },
+      {
+        "prompt": "1 bed, 1 bath studio-style home with an office, 750 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 1,
+        "attempts": 1,
+        "s": 7.992234299890697
+      },
+      {
+        "prompt": "3 bed, 2 bath ranch with laundry room, 1,600 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.644104500068352
+      },
+      {
+        "prompt": "5 bed, 3 bath, formal dining, 3,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 7.970965600106865
+      },
+      {
+        "prompt": "2 bed, 2 bath, open plan kitchen and living, 1,200 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 5.110744399949908
+      },
+      {
+        "prompt": "3 bedroom, 2.5 bath, two home offices, 2,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 10.325821400154382
+      },
+      {
+        "prompt": "starter home: 2 bedrooms, 1 bathroom, small kitchen, 1,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 1,
+        "attempts": 1,
+        "s": 9.530899900011718
+      },
+      {
+        "prompt": "4 bed, 2 bath, kitchen opens onto dining, 2,100 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 9.465189900016412
+      },
+      {
+        "prompt": "retirement home, 2 bed, 2 bath, large primary suite, 1,500 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 5.6275404000189155
+      },
+      {
+        "prompt": "3 bed, 1 bath, eat-in kitchen, 1,300 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 5.645489400019869
+      },
+      {
+        "prompt": "4 bed, 3 bath with a guest suite, 2,600 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.962790600024164
+      },
+      {
+        "prompt": "1 bedroom, 1 bath, big living room, 800 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 2,
+        "attempts": 1,
+        "s": 16.062416600063443
+      },
+      {
+        "prompt": "3 bed, 2 bath, mudroom laundry, office, 1,900 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.589761799899861
+      },
+      {
+        "prompt": "2 bed, 1 bath, dining room, 1,100 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 4.31069379998371
+      },
+      {
+        "prompt": "5 bedroom, 4 bath, office and laundry, 3,200 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 13.693848400143906
+      },
+      {
+        "prompt": "3 bed, 2 bath modern farmhouse, open kitchen, 2,200 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.6617458001710474
+      },
+      {
+        "prompt": "4 bed, 2.5 bath, separate dining and living, 2,300 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 13.870772100053728
+      },
+      {
+        "prompt": "2 bed, 2 bath with home gym used as office, 1,400 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 5.521120500052348
+      },
+      {
+        "prompt": "3 bed, 3 bath, each bedroom with its own bath, 2,000 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 7.062476299935952
+      },
+      {
+        "prompt": "small 2 bed, 1 bath, 850 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 1,
+        "attempts": 1,
+        "s": 9.348957000067458
+      },
+      {
+        "prompt": "3 bed, 2 bath, large kitchen island, 1,750 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.3056708998046815
+      },
+      {
+        "prompt": "4 bedroom, 3 bath, two living areas, 2,800 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.8132162999827415
+      },
+      {
+        "prompt": "1 bed, 1 bath, office, laundry, 950 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 3.7788674999028444
+      },
+      {
+        "prompt": "3 bed, 2 bath, 1,500 sq ft, kitchen next to living",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.333502699853852
+      },
+      {
+        "prompt": "6 bed, 4 bath, 3,600 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 17.962155000073835
+      },
+      {
+        "prompt": "2 bed, 1 bath, open kitchen, office nook, 1,050 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 4.891345400130376
+      },
+      {
+        "prompt": "3 bed, 2 bath split-bedroom plan, 1,850 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 6.3589657000266016
+      },
+      {
+        "prompt": "4 bed, 3 bath, home office, laundry, dining, 2,500 sq ft",
+        "ok": true,
+        "failed": [],
+        "error": null,
+        "rounds": 0,
+        "attempts": 1,
+        "s": 7.02278280002065
+      }
+    ]
+  }
+}
