@@ -77,6 +77,21 @@ def _door_valid(d, layout: Layout) -> bool:
     return False
 
 
+def _window_valid(w, layout: Layout) -> bool:
+    r = layout.room(w.room)
+    if r is None or not math.isfinite(w.offset_ft) or not math.isfinite(w.width_ft) or w.width_ft <= 0:
+        return False
+    fp = layout.footprint
+    length = r.w if w.wall in {"north", "south"} else r.h
+    on_boundary = {
+        "north": abs(r.y) < EPS,
+        "south": abs(r.y + r.h - fp.depth_ft) < EPS,
+        "west": abs(r.x) < EPS,
+        "east": abs(r.x + r.w - fp.width_ft) < EPS,
+    }[w.wall]
+    return on_boundary and w.offset_ft >= -EPS and w.offset_ft + w.width_ft <= length + EPS
+
+
 def _graph(layout: Layout) -> dict[str, set[str]]:
     g: dict[str, set[str]] = {r.id: set() for r in layout.rooms}
     g[EXTERIOR] = set()
@@ -133,6 +148,13 @@ def contract_integrity(layout: Layout) -> list[str]:
     for name, value in vals:
         if not math.isfinite(value) or abs(value / GRID - round(value / GRID)) > EPS:
             errs.append(f"{name} must be finite and on the 0.5 ft grid")
+    for name, value in (("footprint width", layout.footprint.width_ft),
+                        ("footprint depth", layout.footprint.depth_ft),
+                        *((f"{r.name} target area", r.target_sqft) for r in layout.rooms)):
+        if not math.isfinite(value) or value <= 0:
+            errs.append(f"{name} must be finite and positive")
+    if layout.requested_sqft is not None and (not math.isfinite(layout.requested_sqft) or layout.requested_sqft <= 0):
+        errs.append("Requested house area must be finite and positive")
     return errs
 
 
@@ -145,6 +167,9 @@ def door_geometry(layout: Layout) -> list[str]:
              and abs(d.x - layout.entrance.x) < EPS and abs(d.y - layout.entrance.y) < EPS]
     if not front:
         errs.append(f"Front door must sit at entrance ({layout.entrance.x:g}, {layout.entrance.y:g})")
+    for w in layout.windows:
+        if not _window_valid(w, layout):
+            errs.append(f"Window for {w.room} on {w.wall} wall must fit entirely on that room's exterior wall")
     return errs
 
 
@@ -164,6 +189,8 @@ def bedroom_exterior_wall(layout: Layout) -> list[str]:
                 errs.append(f"{r.name} has no exterior wall (needs one for a window)")
             if r.id not in door_rooms:
                 errs.append(f"{r.name} has no door")
+            if not any(w.room == r.id and _window_valid(w, layout) for w in layout.windows):
+                errs.append(f"{r.name} has no valid exterior window")
     return errs
 
 

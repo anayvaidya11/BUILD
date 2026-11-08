@@ -50,3 +50,28 @@ def test_unknown_door_endpoint_fails():
     layout = valid_layout()
     layout.doors.append(Door(between=["ghost", "hall"], x=1, y=15, width_ft=3))
     assert "door_geometry" in failed(layout)
+
+
+def test_window_must_fit_exterior_wall_and_bedroom_needs_valid_one():
+    layout = valid_layout()
+    bedroom = next(r for r in layout.rooms if r.type == "bedroom")
+    for window in layout.windows:
+        if window.room == bedroom.id:
+            window.offset_ft = 1_000
+    assert {"door_geometry", "bedroom_exterior_wall"} <= failed(layout)
+
+
+def test_window_cannot_be_on_interior_wall_or_unknown_room():
+    layout = valid_layout()
+    window = layout.windows[0]
+    window.wall = "south" if window.wall == "north" else "north"
+    if checker._window_valid(window, layout):
+        window.room = "ghost"
+    assert "door_geometry" in failed(layout)
+
+
+def test_nonpositive_footprint_and_target_are_rejected():
+    layout = valid_layout()
+    layout.footprint.width_ft = 0
+    layout.rooms[0].target_sqft = -1
+    assert "contract_integrity" in failed(layout)
