@@ -7,18 +7,7 @@ from walkthru.schema import Door
 
 
 def valid_layout():
-    layout = solver.solve(planner.sample_program())
-    # Role 2 is fixing the baseline Laundry door; keep this checker fixture valid.
-    laundry = next(d for d in layout.doors if "laundry" in d.between)
-    # A 2.5 ft wall cannot fit even a minimum-width door; widen Laundry in fixture.
-    room = layout.room("laundry")
-    kitchen = layout.room("kitchen")
-    room.w = 3.0
-    kitchen.x += 0.5
-    kitchen.w -= 0.5
-    laundry.x = 1.5
-    laundry.width_ft = 3.0
-    return layout
+    return solver.solve(planner.sample_program())
 
 
 def failed(layout):
