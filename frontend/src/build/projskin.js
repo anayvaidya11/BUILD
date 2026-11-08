@@ -16,7 +16,7 @@
 // Photos already contain lighting, so the skin is unlit.
 import * as THREE from "three";
 
-const N = 3;
+export const N = 6; // projectors: 6 photos + 6 depth maps = 12 texture units (WebGL2 guarantees 16)
 const NEAR = 5, FAR = 200; // capture cameras must use these so depth stays precise at house range
 
 const VERT = /* glsl */ `
@@ -36,10 +36,7 @@ const FRAG = /* glsl */ `
 #include <common>
 #include <packing>
 #include <logdepthbuf_pars_fragment>
-uniform sampler2D map0, map1, map2, dep0, dep1, dep2;
-uniform mat4 vp0, vp1, vp2;
-uniform vec3 pp0, pp1, pp2;
-uniform float on0, on1, on2;
+${[...Array(N).keys()].map((i) => `uniform sampler2D map${i}, dep${i}; uniform mat4 vp${i}; uniform vec3 pp${i}; uniform float on${i};`).join("\n")}
 uniform vec3 baseColor;
 varying vec3 vW;
 varying vec3 vN;
@@ -63,9 +60,8 @@ vec4 project(sampler2D img, sampler2D dep, mat4 vp, vec3 pp, float on, vec3 n) {
 void main() {
   #include <logdepthbuf_fragment>
   vec3 n = normalize(vN);
-  vec4 acc = project(map0, dep0, vp0, pp0, on0, n)
-           + project(map1, dep1, vp1, pp1, on1, n)
-           + project(map2, dep2, vp2, pp2, on2, n);
+  vec4 acc = vec4(0.0);
+  ${[...Array(N).keys()].map((i) => `acc += project(map${i}, dep${i}, vp${i}, pp${i}, on${i}, n);`).join("\n  ")}
   vec3 shaded = baseColor * (0.55 + 0.45 * max(dot(n, normalize(vec3(-0.4, 0.8, -0.3))), 0.0));
   vec3 col = acc.w > 1e-4 ? acc.rgb / acc.w : shaded;
   col = mix(shaded, col, smoothstep(0.0, 0.12, acc.w));
@@ -128,7 +124,7 @@ export class ProjectionSkin {
     });
   }
 
-  get ready() { return [0, 1, 2].some((i) => this.u[`on${i}`].value > 0.5); }
+  get ready() { return [...Array(N).keys()].some((i) => this.u[`on${i}`].value > 0.5); }
 
   _skinFor(mat) {
     let m = this.mats.get(mat);
