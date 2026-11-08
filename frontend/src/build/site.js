@@ -302,7 +302,8 @@ export async function openSiteView(layout) {
   };
   const SHOTS = Array.from({ length: RING }, (_, k) => {
     const off = 30 + k * (360 / RING);
-    return { off, elev: 8, fill: 0.6, tier: "main", desc: `Photo from the ${sideName(off)} of the house, at the same distance and height as every other frame of a 360° turntable` };
+    // frame 0 is the hero (the reference the others match): best framing model; the rest: fastest model
+    return { off, elev: 8, fill: 0.6, tier: k === 0 ? "main" : "lite", desc: `Photo from the ${sideName(off)} of the house, at the same distance and height as every other frame of a 360° turntable` };
   });
   // the photo skin (3D map view) has 6 projectors: use 6 evenly spaced ring frames
   const SKIN_FRAMES = Array.from({ length: 6 }, (_, k) => Math.round((k * RING) / 6));
@@ -411,10 +412,11 @@ export async function openSiteView(layout) {
         if (token === shotToken) { done++; progress(); }
       }
     };
-    // hero first (it is the reference for everything else), then the rest, 6 at a time
+    // hero first (it is the reference for everything else), then the rest, 8 at a time on the lite model
+    // (~4 s each): the whole ring lands in about 15 s instead of a minute
     const hero = await renderOne(0, null);
     const queue = images.map((_, i) => i).slice(1);
-    await Promise.all(Array.from({ length: 6 }, async () => {
+    await Promise.all(Array.from({ length: 8 }, async () => {
       while (queue.length && token === shotToken) await renderOne(queue.shift(), hero);
     }));
     if (token !== shotToken) return;

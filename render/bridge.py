@@ -2,7 +2,8 @@
 
   python3 render/bridge.py            # http://127.0.0.1:8790
 
-POST /render  {layout, parts, items, quality: "preview"|"final"}  -> {job, status, ...}
+POST /render  {layout, parts, items, quality, prev: <last job id>, changed: [room ids the edit targeted]}
+             -> {job, status, ...}; rooms not in `changed` keep the panoramas of job `prev`
 GET  /render/<job>                                              -> progress + tour + image urls
 GET  /health
 GET  /renders/<job>/<file>.jpg                                  -> rendered panoramas (CORS open)
@@ -98,20 +99,11 @@ def _inside(pt, r):
 
 
 def room_signatures(scene):
-    """What a room's panorama depends on: its own rectangle, the furniture in it, its openings, and
-    the rectangles of the rooms it opens onto (seen through doors). Rooms whose signature did not
-    change between two layouts can keep their rendered panorama."""
+    """What a room's panorama depends on: its own rectangle, the furniture in it and its openings.
+    Used when no edit focus is known (see reusable)."""
     L = scene["layout"]
     rooms = {r["id"]: r for r in L["rooms"]}
     doors = L.get("doors", [])
-    neigh = {rid: set() for rid in rooms}
-    for d in doors:
-        a, b = (d.get("between") or ["", ""])[:2]
-        if a in rooms and b in rooms:
-            neigh[a].add(b); neigh[b].add(a)
-    for e in L.get("open", []) or []:  # open-plan edges, if the exporter sends them
-        if isinstance(e, (list, tuple)) and len(e) >= 2 and e[0] in rooms and e[1] in rooms:
-            neigh[e[0]].add(e[1]); neigh[e[1]].add(e[0])
     def box(r):
         return [r["x"], r["y"], r["w"], r["h"], r.get("type")]
     def items_in(rid):
@@ -130,9 +122,46 @@ def room_signatures(scene):
             "parts": [pt for pt in (scene.get("parts") or []) if isinstance(pt, dict) and pt.get("room") == rid],
             "doors": sorted(json.dumps(d, sort_keys=True) for d in doors if rid in (d.get("between") or [])),
             "windows": sorted(json.dumps(w, sort_keys=True) for w in L.get("windows", []) if w.get("room") == rid),
-            "neighbors": sorted(box(rooms[n]) for n in neigh[rid]),
         }, sort_keys=True).encode()).hexdigest()
     return sig
+
+
+# A room the user did not touch keeps its panorama even if the solver nudged it by a foot or re-placed a
+# chair; only a drastic change of the room itself (type, ~1/4 of its area, a wall moved 3+ ft, or the whole
+# room moved 4+ ft) forces a re-render.
+def _drastic(a, b):
+    if a is None or b is None or a.get("type") != b.get("type"):
+        return True
+    area_a, area_b = max(a["w"] * a["h"], 1e-6), max(b["w"] * b["h"], 1e-6)
+    if not 0.75 <= area_b / area_a <= 1.33:
+        return True
+    if abs(a["w"] - b["w"]) > 3 or abs(a["h"] - b["h"]) > 3:
+        return True
+    ca, cb = (a["x"] + a["w"] / 2, a["y"] + a["h"] / 2), (b["x"] + b["w"] / 2, b["y"] + b["h"] / 2)
+    return ((ca[0] - cb[0]) ** 2 + (ca[1] - cb[1]) ** 2) ** 0.5 > 4
+
+
+def reusable(job, prev, focus):
+    """Which rooms of `job` can keep the panorama rendered in `prev`.
+
+    focus = ids of the rooms the user's edit targeted (the frontend diffs the planner's room program).
+    With a focus: everything else is kept unless the room itself changed drastically. Without one
+    (a manual furniture move, or an older client): a room is kept only if nothing it shows changed."""
+    keep = []
+    prev_rooms = {r["id"]: r for r in prev["scene"]["layout"]["rooms"]} if prev.get("scene") else {}
+    rooms = {r["id"]: r for r in job["scene"]["layout"]["rooms"]}
+    for nid, s in job["tour"]["scenes"].items():
+        pn, ps = prev["nodes"].get(nid), prev["tour"]["scenes"].get(nid)
+        if not pn or not ps or pn.get("state") != "done":
+            continue
+        if focus:
+            ok = nid not in focus and not _drastic(prev_rooms.get(nid), rooms.get(nid))
+        else:
+            same_spot = [round(v, 2) for v in (s["x"], s["y"])] == [round(v, 2) for v in (ps["x"], ps["y"])]
+            ok = prev["sig"].get(nid) == job["sig"][nid] and same_spot
+        if ok:
+            keep.append(nid)
+    return keep
 
 
 def _load_job(key):
@@ -148,6 +177,7 @@ def start_job(payload):
     if quality not in QUALITY and quality != "auto":
         quality = "auto"
     scene = {k: payload[k] for k in ("layout", "parts", "items")}
+    # the job id names the scene; "changed"/"prev" only steer which rooms are reused, so identical scenes share a job
     key = hashlib.sha1(json.dumps([scene, payload.get("only"), QUALITY_VERSION], sort_keys=True).encode()).hexdigest()[:12] + "-" + quality
     with LOCK:
         if key in JOBS:
@@ -166,23 +196,23 @@ def start_job(payload):
                "nodes": {nid: {"state": "queued", "label": s["label"], **({"hq_state": "queued"} if quality == "auto" else {})}
                          for nid, s in tour["scenes"].items()},
                "base": f"{PUBLIC}/{key}/", "scene": scene, "sig": room_signatures(scene), "reused": []}
-        # Incremental re-render: rooms whose view did not change since the previous job keep their panoramas.
+        # Incremental re-render: only the room(s) the user changed render again; the rest keep their panoramas.
         prev = _load_job(payload["prev"]) if payload.get("prev") and payload["prev"] != key else None
         if prev and prev.get("sig") and prev.get("quality") == quality:
-            for nid, s in tour["scenes"].items():
-                pn = prev["nodes"].get(nid)
-                same_spot = nid in prev["tour"]["scenes"] and [round(v, 2) for v in (s["x"], s["y"])] == [round(v, 2) for v in (prev["tour"]["scenes"][nid]["x"], prev["tour"]["scenes"][nid]["y"])]
-                if pn and pn.get("state") == "done" and prev["sig"].get(nid) == job["sig"][nid] and same_spot:
-                    job["nodes"][nid] = {**pn, "reused_from": prev["job"]}
-                    job["reused"].append(nid)
+            focus = [r for r in (payload.get("changed") or []) if isinstance(r, str)]
+            job["focus"] = focus
+            for nid in reusable(job, prev, focus):
+                job["nodes"][nid] = {**prev["nodes"][nid], "reused_from": prev["job"]}
+                job["reused"].append(nid)
         JOBS[key] = job
         save(job)
     # start with the start room so the viewer can open as early as possible
     order = [tour["start"]] + [n for n in tour["scenes"] if n != tour["start"]]
     order = [n for n in order if n not in job["reused"]]
-    if not order:
+    if not order:  # every room kept from the previous job
         with LOCK:
             job["status"] = "done"
+            job["finished"] = time.time()
             save(job)
         return job
     parallel_hq = quality == "auto" and len(order) <= PARALLEL_HQ_MAX

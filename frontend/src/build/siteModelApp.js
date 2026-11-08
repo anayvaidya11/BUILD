@@ -635,8 +635,28 @@ async function applyEdit(instr) {
   }
   return animateEdit(res);
 }
+// Which room(s) an edit was about: the rooms whose target size the planner changed (or added/removed).
+// The solver may also nudge neighbours by a foot to make space; Photoreal keeps those panoramas.
+function editFocus(res) {
+  const before = new Map((plan.program?.rooms ?? []).map((r) => [r.id, r.target_sqft]));
+  const after = res.response?.program?.rooms;
+  let ids = [];
+  if (after) {
+    ids = after.filter((r) => !before.has(r.id) || Math.abs(before.get(r.id) - r.target_sqft) > 0.5).map((r) => r.id);
+    const now = new Set(after.map((r) => r.id));
+    ids.push(...[...before.keys()].filter((id) => !now.has(id))); // removed rooms (nothing to render, but marks the edit)
+  }
+  if (!ids.length) { // local resize, or the planner kept its targets: the room whose area changed most
+    const old = new Map(layout.rooms.map((q) => [q.id, q.w * q.h]));
+    const best = res.layout.rooms.filter((q) => res.changed.includes(q.id))
+      .sort((a, b) => Math.abs(b.w * b.h - (old.get(b.id) ?? 0)) - Math.abs(a.w * a.h - (old.get(a.id) ?? 0)))[0];
+    ids = best ? [best.id] : res.changed;
+  }
+  return ids;
+}
 async function animateEdit(res) {
   const msg = $("#editMsg");
+  photoreal?.focus(editFocus(res)); // before the layout swaps: the auto-render may start mid-animation
   editing = true; highlight(null); controls.autoRotate = false; furnDrag.enabled = false;
   KEEP_ARRANGEMENT = furn?.getArrangement?.() ?? null; // moved furniture survives the edit
   const focus = res.changed.find((id) => house.floors[id]);
@@ -781,7 +801,7 @@ const shownIds = () => tiles.filter((t) => !t.hidden).map((t) => t.dataset.id);
 
 // Site view: "On site" button next to Walk through (Google 3D tiles; see core/site.js).
 addSiteButton($("#walkBtn"), () => layout);
-addPhotorealButton($("#walkBtn"), () => ({ layout: layout, furniture: furn })); // Blender Cycles 360° tour, renders automatically
+const photoreal = addPhotorealButton($("#walkBtn"), () => ({ layout: layout, furniture: furn, busy: editing }))?.photoreal; // busy: don't export a half-furnished house // Blender Cycles 360° tour, renders automatically
 // ---------- design chat: an iterative loop with the agent (POST /api/chat; local fallback) ----------
 const convo = []; // the whole conversation, from the first brief through every refinement
 let chatBusy = false;

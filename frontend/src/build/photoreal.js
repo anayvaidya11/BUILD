@@ -126,10 +126,13 @@ function loadPannellum() {
 // ---------- controller (one per page) ----------
 function createController(getScene) {
   let job = null, poll = 0, sceneKey = null, stale = false, online = null, viewer = null, current = null, arrSig = null;
+  let pendingFocus = null; // room ids the last edit targeted: only these re-render, the rest keep their panoramas
   const listeners = new Set();
   const emit = () => listeners.forEach((f) => f());
   const keyOf = (s) => JSON.stringify(s.layout.rooms.map((r) => [r.id, r.x, r.y, r.w, r.h]));
   const counts = () => { const n = Object.values(job?.nodes ?? {}); return { done: n.filter((x) => x.state === "done").length, total: n.length }; };
+  // seconds since the job started (wall clock on the bridge); frozen once it finished
+  const elapsed = () => (job?.created ? Math.max(0, Math.round((job.finished ?? Date.now() / 1000) - job.created)) : 0);
 
   let onlineAt = 0;
   async function start(quality = "auto") {
@@ -138,8 +141,10 @@ function createController(getScene) {
     if (online !== true && Date.now() - onlineAt > 10000) { onlineAt = Date.now(); online = await bridgeOnline(); }
     if (!online) { emit(); return; }
     const { layout, furniture } = getScene();
-    // prev: the bridge reuses panoramas of rooms whose view did not change since the last job
-    const payload = { ...exportScene(layout, furniture), quality, prev: job?.job ?? null };
+    // prev + changed: the bridge keeps the panoramas of job `prev` for every room not in `changed`
+    // (the solver may nudge neighbours by a foot when one room grows; those are not re-rendered)
+    const payload = { ...exportScene(layout, furniture), quality, prev: job?.job ?? null, changed: pendingFocus ?? [] };
+    pendingFocus = null;
     sceneKey = keyOf(payload); stale = false; arrSig = JSON.stringify(furniture.getArrangement?.() ?? []);
     job = await bridge("/render", payload);
     emit(); tick();
@@ -160,12 +165,13 @@ function createController(getScene) {
     if (!job) return { state: "idle", text: "Photoreal" };
     const { done, total } = counts();
     if (stale) return { state: "stale", text: "Photoreal · re-render" };
-    if (job.status === "rendering") return { state: "rendering", text: `Photoreal · ${done}/${total} rooms` };
+    if (job.status === "rendering") return { state: "rendering", text: `Photoreal · ${done}/${total} rooms · ${elapsed()} s` };
     if (job.status === "refining") {
       const sharp = Object.values(job.nodes).filter((n) => n.hq).length;
-      return { state: "rendering", text: `Photoreal · sharpening ${sharp}/${total}` };
+      return { state: "rendering", text: `Photoreal · sharpening ${sharp}/${total} · ${elapsed()} s` };
     }
-    return { state: "done", text: "Photoreal tour" };
+    const kept = job.reused?.length ?? 0;
+    return { state: "done", text: kept && kept < total ? `Photoreal tour · ${total - kept} room${total - kept === 1 ? "" : "s"} in ${elapsed()} s` : `Photoreal tour · ${elapsed()} s` };
   }
 
   // ----- overlay -----
@@ -218,7 +224,7 @@ function createController(getScene) {
     const { done, total } = counts();
     el.querySelector("#pr-wait").style.display = ready.length ? "none" : "grid";
     el.querySelector("#pr-wait .bar i").style.width = `${Math.max(4, (done / Math.max(1, total)) * 100)}%`;
-    el.querySelector("#pr-waitn").textContent = `${done} of ${total} rooms rendered`;
+    el.querySelector("#pr-waitn").textContent = `${done} of ${total} rooms rendered · ${elapsed()} s`;
     if (ready.length && !viewer) {
       const first = ready.includes(job.tour.start) ? job.tour.start : ready[0];
       const scenes = {}; for (const id of ready) { scenes[id] = sceneConfig(id); added.add(id); shown[id] = job.nodes[id].url; }
@@ -287,19 +293,23 @@ function createController(getScene) {
     on: (f) => (listeners.add(f), () => listeners.delete(f)),
     // a new house: render automatically once per distinct layout
     async auto() {
-      const s = getScene(); if (!s?.layout || !s?.furniture) return;
+      const s = getScene(); if (!s?.layout || !s?.furniture || s.busy) return; // busy: an edit is still animating/furnishing
       const key = keyOf({ layout: s.layout });
       if (key === sceneKey && job) return;
       if (online !== true && Date.now() - onlineAt <= 10000) return; // probe cooldown
       viewer?.destroy?.(); viewer = null; added.clear(); current = null;
       await start("auto");
     },
+    // an edit is about these rooms: the next render re-does only them (see start)
+    focus(ids) { pendingFocus = Array.isArray(ids) && ids.length ? ids.map(String) : null; },
     // furniture moved after a render: offer a re-render instead of spending GPU time on every drag
     markStale() { if (job) { stale = true; emit(); } },
     checkStale() {
-      if (!job || stale) return;
+      if (!job) return;
       const f = getScene()?.furniture; if (!f?.getArrangement) return;
-      if (JSON.stringify(f.getArrangement()) !== arrSig) { stale = true; emit(); }
+      // two-way: an item dragged back to where it was rendered clears the "re-render" state again
+      const moved = JSON.stringify(f.getArrangement()) !== arrSig;
+      if (moved !== stale) { stale = moved; emit(); }
     },
     async rerender() { viewer?.destroy?.(); viewer = null; added.clear(); current = null; await start("auto"); },
     get job() { return job; },
