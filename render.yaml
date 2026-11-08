@@ -2,6 +2,7 @@ services:
   - type: web
     name: walkthru-api
     runtime: python
+    plan: free
     rootDir: backend
     buildCommand: pip install -e .
     startCommand: uvicorn walkthru.api:app --host 0.0.0.0 --port $PORT
