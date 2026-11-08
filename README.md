@@ -106,11 +106,18 @@ curl -s localhost:8000/api/generate -H 'content-type: application/json' \
   -d '{"prompt":"3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft"}' > backend/cached/3bed_office.json
 ```
 
-## Backend on Render
+## Deploy on Vercel
 
-The repository root contains `render.yaml` for a free-plan Python web service rooted at `backend/`. In the Render Blueprint setup, provide `ANTHROPIC_API_KEY` and set `WALKTHRU_CORS` to the deployed frontend origin (for example, `https://your-site.example`). Render starts Uvicorn on its assigned port and checks `/health`. After deployment, verify `/health`, `/api/sample`, and a live `/api/generate` response. The frontend's `NEXT_PUBLIC_API_URL` must point to the Render service URL. Warm the free service with `/health` shortly before the demo because idle free instances spin down.
+Deploy this GitHub repository as two Vercel projects: set one project's Root Directory to `backend/` for the FastAPI API and the other's to `frontend/` for Next.js. The backend's `pyproject.toml` points Vercel at `walkthru.api:app`.
 
-The cache path serves only backups that pass the current checker. Three distinct, validated curated backups are committed for the demo. Rebuild them with `python cached/build_backups.py --offline` from `backend/`, or run without `--offline` when an Anthropic key is available to capture live generations. See `backend/cached/README.md` and `docs/DEMO.md`.
+Set these Vercel environment variables:
+
+- Backend: `ANTHROPIC_API_KEY` and `WALKTHRU_CORS` set to the frontend's deployed origin.
+- Frontend: `NEXT_PUBLIC_API_URL` set to the backend's deployed origin.
+
+After deployment, verify the API's `/health`, `/api/sample`, and `/api/generate` endpoints and test generation, editing, and the 3D walkthrough on the frontend URL. See [docs/DEMO.md](docs/DEMO.md) for the full deployment and rehearsal checklist.
+
+The API cache serves only backups that pass the current checker. Three distinct, validated curated backups are committed for the demo. Rebuild them with `python cached/build_backups.py --offline` from `backend/`, or run without `--offline` when an Anthropic key is available to capture live generations. See `backend/cached/README.md`.
 
 ## Timeline gates
 

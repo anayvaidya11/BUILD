@@ -22,10 +22,13 @@ live Claude generations. Rerun `--check` and commit the JSON files before
 deploying. Identify the offline builds as curated backups if they appear in
 the demo.
 
-After deployment, set `API_URL` to the Render service URL and check the live
-service. The Blueprint uses Render's free plan, which spins down when idle;
-call `/health` shortly before the demo and confirm it is warm. Confirm the
-returned layouts have no failing checks and that the backup response says
+Deploy two Vercel projects from this repository. Set the backend project's
+Root Directory to `backend/` and the frontend project's Root Directory to
+`frontend/`. The backend entrypoint is configured in `backend/pyproject.toml`.
+Set backend environment variables `ANTHROPIC_API_KEY` and `WALKTHRU_CORS` (the
+exact frontend origin); set frontend `NEXT_PUBLIC_API_URL` to the backend
+origin. Set `API_URL` below to that backend URL and check the live service.
+Confirm returned layouts have no failing checks and the backup response says
 `cached: true`.
 
 ```bash
@@ -38,9 +41,7 @@ curl -fsS -X POST "$API_URL/api/generate" \
   -d '{"prompt":"3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft"}'
 ```
 
-Set the frontend's `NEXT_PUBLIC_API_URL` to the same service URL and
-`WALKTHRU_CORS` on Render to the deployed frontend origin. Test generation,
-walking, and editing on that URL. If live generation returns `cached: true`,
+Test generation, walking, and editing on the deployed frontend URL. If live generation returns `cached: true`,
 state that the backup was used; do not present it as a fresh generation.
 
 ## Three-minute sequence
