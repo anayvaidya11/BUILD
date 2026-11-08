@@ -59,6 +59,10 @@ def sample():
     program = planner.sample_program()
     layout = solver.solve(program)
     layout.checks = checker.check(layout)
+    failed = checker.failures(layout.checks)
+    if failed:
+        logging.error("sample layout failed validation: %s", [(c.rule, c.message) for c in failed])
+        raise HTTPException(503, "Sample layout does not pass the current layout rules")
     return GenerateResponse(layout=layout, program=program, rounds=[], elapsed_s=0)
 
 
