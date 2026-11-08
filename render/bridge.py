@@ -26,6 +26,7 @@ from tour import plan_tour  # noqa: E402
 
 import os
 PORT = int(os.environ.get("BRIDGE_PORT", 8790))
+HOST = os.environ.get("BRIDGE_HOST", "127.0.0.1")  # 0.0.0.0 when hosted (render/bridge_modal.py)
 OUT = ROOT / "out" / "renders"
 PUBLIC = os.environ.get("BRIDGE_PUBLIC", f"http://127.0.0.1:{PORT}") + "/renders"
 # (width, samples, adaptive threshold). "auto" = fast preview, then an automatic 4K high-quality pass per room
@@ -184,5 +185,5 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
-    print(f"build render bridge on http://127.0.0.1:{PORT}  ->  {OUT}")
-    ThreadingHTTPServer(("127.0.0.1", PORT), H).serve_forever()
+    print(f"build render bridge on http://{HOST}:{PORT}  ->  {OUT}")
+    ThreadingHTTPServer((HOST, PORT), H).serve_forever()
