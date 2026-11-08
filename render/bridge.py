@@ -30,7 +30,10 @@ HOST = os.environ.get("BRIDGE_HOST", "127.0.0.1")  # 0.0.0.0 when hosted (render
 OUT = ROOT / "out" / "renders"
 PUBLIC = os.environ.get("BRIDGE_PUBLIC", f"http://127.0.0.1:{PORT}") + "/renders"
 # (width, samples, adaptive threshold). "auto" = fast preview, then an automatic 4K high-quality pass per room
-QUALITY = {"test": (1024, 32, 0.02), "preview": (2048, 96, 0.012), "final": (4096, 512, 0.004)}
+# v2: preview trades samples for speed (the denoiser covers it); the 4K pass runs 192 spp instead of
+# 512, about 3x faster per room with no visible noise indoors. QUALITY_VERSION busts cached jobs.
+QUALITY = {"test": (1024, 32, 0.02), "preview": (2048, 64, 0.02), "final": (4096, 192, 0.008)}
+QUALITY_VERSION = 2
 JOBS = {}
 LOCK = threading.Lock()
 POOL = ThreadPoolExecutor(max_workers=24)
@@ -94,7 +97,7 @@ def start_job(payload):
     if quality not in QUALITY and quality != "auto":
         quality = "auto"
     scene = {k: payload[k] for k in ("layout", "parts", "items")}
-    key = hashlib.sha1(json.dumps([scene, payload.get("only")], sort_keys=True).encode()).hexdigest()[:12] + "-" + quality
+    key = hashlib.sha1(json.dumps([scene, payload.get("only"), QUALITY_VERSION], sort_keys=True).encode()).hexdigest()[:12] + "-" + quality
     with LOCK:
         if key in JOBS:
             return JOBS[key]

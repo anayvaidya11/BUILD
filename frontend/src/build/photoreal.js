@@ -204,7 +204,7 @@ function createController(getScene) {
   });
   function sceneConfig(id) {
     const s = job.tour.scenes[id], n = job.nodes[id];
-    return { type: "equirectangular", panorama: new URL(n.url, location.href).href, hfov: 105, yaw: s.links[0]?.yaw ?? 0, pitch: -4,
+    return { type: "equirectangular", panorama: new URL(n.url, location.href).href, hfov: 90, yaw: s.links[0]?.yaw ?? 0, pitch: -4,
       hotSpots: s.links.map((l) => hs(l, job.nodes[l.to]?.state === "done")) };
   }
   const added = new Set(), shown = {};
@@ -221,6 +221,18 @@ function createController(getScene) {
       viewer = pannellum.viewer(el.querySelector("#pr-pano"), { default: { firstScene: first, sceneFadeDuration: 900, autoLoad: true, showControls: false }, scenes });
       current = first;
       viewer.on("scenechange", (id) => { current = id; renderSide(); });
+      // Pannellum 2.5 sizes its canvas in CSS pixels, so Retina screens get half the detail. Measure
+      // what it did and lay the container out larger, scaled back down, so one texel maps to one pixel.
+      viewer.on("load", () => {
+        const dpr = Math.min(window.devicePixelRatio || 1, 2), c = el.querySelector("#pr-pano canvas"), box = el.querySelector("#pr-pano");
+        if (!c || dpr <= 1 || box.dataset.dpr) return;
+        const need = dpr / (c.width / Math.max(1, c.clientWidth));
+        if (need > 1.05) {
+          box.dataset.dpr = "1";
+          Object.assign(box.style, { width: `${100 * need}%`, height: `${100 * need}%`, transform: `scale(${1 / need})`, transformOrigin: "0 0" });
+          viewer.resize();
+        }
+      });
     } else if (viewer) {
       // 4K pass landed for a room already in the tour: swap the image in place, keep the view
       for (const id of ready) if (added.has(id) && shown[id] !== job.nodes[id].url) {

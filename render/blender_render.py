@@ -1376,6 +1376,7 @@ def build_scene(manifest, payload):
     cy.use_denoising = True
     cy.denoiser = "OPENIMAGEDENOISE"
     cy.denoising_input_passes = "RGB_ALBEDO_NORMAL"
+    scene.render.filter_size = 1.0  # default 1.5 px Blackman-Harris softens edges; 1.0 is crisper
     cy.max_bounces = 12
     cy.diffuse_bounces = 6
     cy.glossy_bounces = 6
@@ -1522,7 +1523,7 @@ def render_layout_node(payload: dict, node: dict, width: int = 2048, samples: in
     scene.cycles.samples = samples
     scene.cycles.adaptive_threshold = threshold
     scene.render.image_settings.file_format = "JPEG"
-    scene.render.image_settings.quality = 90
+    scene.render.image_settings.quality = 95
     scene.render.filepath = f"/tmp/{node['id']}.jpg"
     bpy.ops.render.render(write_still=True)
     return {"id": node["id"], "jpg": pathlib.Path(f"/tmp/{node['id']}.jpg").read_bytes(), "backend": backend,
