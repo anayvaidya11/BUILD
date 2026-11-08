@@ -27,7 +27,8 @@ def requested_area(prompt: str) -> float:
 
 def judged(layout, prompt: str) -> list[str]:
     layout.requested_sqft = requested_area(prompt)
-    return [c.rule for c in checker.check(layout) if not c.pass_]
+    checks = checker.check(layout) + [checker.check_prompt(prompt, layout)]
+    return [c.rule for c in checks if not c.pass_]
 
 
 def run_raw(prompt: str) -> dict:

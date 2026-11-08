@@ -11,7 +11,7 @@ from collections import deque
 import math
 from typing import Callable
 
-from .schema import EXTERIOR, Check, Layout, Room, RoomProgram, RoomSpec
+from .schema import EXTERIOR, Check, Layout, Room
 
 EPS = 0.01
 MIN_HALL_W = 3.0
@@ -243,11 +243,7 @@ def check_prompt(prompt: str, layout: Layout) -> Check:
     """Judge explicit requests using role 1's shared requirements parser."""
     from . import requirements  # role 1's module, shared with the planner
 
-    program = RoomProgram(
-        requested_sqft=layout.requested_sqft or layout.footprint.width_ft * layout.footprint.depth_ft,
-        rooms=[RoomSpec.model_validate(r.model_dump()) for r in layout.rooms if r.type != "hall"],
-    )
-    errs = requirements.mismatches(requirements.parse(prompt), program)
+    errs = requirements.mismatches(requirements.parse(prompt), layout.rooms, layout.requested_sqft)
     return Check(rule="prompt_fidelity", pass_=not errs, message="; ".join(errs))
 
 
