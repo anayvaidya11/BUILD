@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>House Walkthrough</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.js"></script>
+<style>
+  :root { --bg:#111; --panel:rgba(20,20,22,.78); --text:#f2f2f2; --muted:#a9a9a9; --accent:#4da3ff; --room:#2b2d31; --wall:#8a8d93; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) { --bg:#111; } }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--text); font:14px/1.4 system-ui,-apple-system,sans-serif; overflow:hidden; }
+  #pano { position:fixed; inset:0; }
+  .hud { position:fixed; z-index:5; background:var(--panel); backdrop-filter:blur(8px); border-radius:12px; }
+  #title { top:16px; left:16px; padding:10px 14px; }
+  #title b { font-size:16px; display:block; }
+  #title span { color:var(--muted); font-size:12px; }
+  #map { bottom:16px; left:16px; padding:10px; width:220px; }
+  #map svg { display:block; width:100%; height:auto; }
+  #map .room { fill:var(--room); stroke:var(--wall); stroke-width:.06; }
+  #map .rl { fill:var(--muted); font-size:.42px; text-anchor:middle; }
+  #map .node { fill:#fff; stroke:#000; stroke-width:.05; cursor:pointer; }
+  #map .node.cur { fill:var(--accent); }
+  #map .cone { fill:var(--accent); opacity:.35; }
+  /* floor arrows */
+  .nav-arrow { width:72px; height:72px; margin:-36px 0 0 -36px; cursor:pointer; }
+  .nav-arrow .ring { width:72px; height:72px; border-radius:50%; background:rgba(255,255,255,.18);
+    border:2px solid rgba(255,255,255,.85); box-shadow:0 2px 12px rgba(0,0,0,.4);
+    transform:perspective(200px) rotateX(55deg); display:flex; align-items:center; justify-content:center; transition:background .15s, transform .15s; }
+  .nav-arrow:hover .ring { background:rgba(77,163,255,.55); transform:perspective(200px) rotateX(55deg) scale(1.1); }
+  .nav-arrow .chev { width:0; height:0; border-left:14px solid transparent; border-right:14px solid transparent; border-bottom:20px solid #fff; transform:translateY(-3px); }
+  .nav-arrow .tip { position:absolute; top:-26px; left:50%; transform:translateX(-50%); white-space:nowrap; background:var(--panel);
+    padding:3px 8px; border-radius:6px; font-size:12px; opacity:0; transition:opacity .15s; pointer-events:none; }
+  .nav-arrow:hover .tip { opacity:1; }
+  .pnlm-panorama-info, .pnlm-load-box p { display:none !important; }
+  #fade { position:fixed; inset:0; background:#000; opacity:0; pointer-events:none; transition:opacity .35s; z-index:4; }
+  @media (max-width:520px) { #map { width:150px; } #title b { font-size:14px; } }
+</style>
+</head>
+<body>
+<div id="pano"></div>
+<div id="fade"></div>
+<div id="title" class="hud"><b id="room">Loading…</b><span>Drag to look · click floor arrows or map dots to walk</span></div>
+<div id="map" class="hud"></div>
+<script>
+(async function () {
+  const tour = await (await fetch('tour.json')).json();
+  const S = tour.scenes, [W, D] = tour.size;
+  let viewer, busy = false;
+
+  // Use the 8K panoramas when they exist and the GPU can hold an 8192 px texture.
+  // A 4096 px equirect spans 360deg, so a 100deg view is only ~1100 px wide: soft on any laptop.
+  const glc = document.createElement('canvas').getContext('webgl');
+  const maxTex = glc ? glc.getParameter(glc.MAX_TEXTURE_SIZE) : 4096;
+  const dir = (tour.hires && maxTex >= 8192) ? 'panos_8k/' : 'panos/';
+
+  // ---- floor arrow hotspot
+  function arrow(div, args) {
+    div.classList.add('nav-arrow');
+    div.innerHTML = '<div class="ring"><div class="chev"></div></div><div class="tip">' + S[args.to].label + '</div>';
+  }
+  function walk(evt, args) { go(args.to, args.yaw, args.pitch); }
+
+  function go(to, yaw, pitch) {
+    if (busy || to === viewer.getScene()) return;
+    busy = true;
+    const cur = viewer.getScene();
+    if (yaw === undefined) {            // map click: face the destination
+      const a = S[cur], b = S[to];
+      yaw = Math.atan2(b.x - a.x, b.y - a.y) * 180 / Math.PI;
+    }
+    // Street-View style: turn toward target, push in, then cut to the next pano
+    viewer.lookAt(Math.max(pitch ?? -5, -10), yaw, 70, 550, function () {
+      document.getElementById('fade').style.opacity = .55;
+      viewer.loadScene(to, 0, yaw, 85);
+    });
+  }
+
+  const scenes = {};
+  for (const [id, s] of Object.entries(S)) {
+    scenes[id] = {
+      title: s.label, panorama: dir + id + '.jpg', type: 'equirectangular',
+      northOffset: 0, hfov: 85, minHfov: 70, maxHfov: 85, pitch: 0, yaw: 0,
+      hotSpots: s.links.map(l => ({
+        pitch: l.pitch, yaw: l.yaw, cssClass: 'nav-arrow-wrap',
+        createTooltipFunc: arrow, createTooltipArgs: l,
+        clickHandlerFunc: walk, clickHandlerArgs: l,
+      })),
+    };
+  }
+
+  viewer = pannellum.viewer('pano', {
+    // Zoom is locked: double-click, scroll/pinch and +/- keys all zoomed the view, which read as the
+    // viewer "zooming in randomly" on a trackpad. Walking between rooms still does its short push-in.
+    default: { firstScene: tour.start, sceneFadeDuration: 450, autoLoad: true, showControls: false, compass: false,
+               hfov: 85, minHfov: 85, maxHfov: 85, mouseZoom: false, doubleClickZoom: false, keyboardZoom: false,
+               touchPanSpeedCoeffFactor: 1 },
+    scenes,
+  });
+
+  // Retina: make sure the WebGL canvas has one texel per physical pixel. Pannellum 2.5 applies
+  // devicePixelRatio only on some code paths, so measure what it did and scale the container up by
+  // whatever is missing (a scaled-down container renders at a larger CSS size).
+  function fixPixelRatio() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const c = document.querySelector('#pano canvas');
+    if (!c || dpr <= 1) return;
+    const have = c.width / Math.max(1, c.clientWidth);   // pannellum's own ratio
+    const need = dpr / have;
+    const el = document.getElementById('pano');
+    if (need > 1.05) {
+      el.style.width = (100 * need) + 'vw';
+      el.style.height = (100 * need) + 'vh';
+      el.style.transform = 'scale(' + (1 / need) + ')';
+      el.style.transformOrigin = '0 0';
+      viewer.resize();
+    }
+  }
+  viewer.on('load', fixPixelRatio);
+
+  // ---- minimap
+  const pad = 0.4, vb = `${-pad} ${-pad} ${W + 2 * pad} ${D + 2 * pad}`;
+  // y flipped so north (+y) is up on the map
+  const fy = y => D - y;
+  let svg = `<svg viewBox="${vb}" xmlns="http://www.w3.org/2000/svg">`;
+  for (const [x0, y0, x1, y1, label] of tour.rooms)
+    svg += `<rect class="room" x="${x0}" y="${fy(y1)}" width="${x1 - x0}" height="${y1 - y0}"/>` +
+           `<text class="rl" x="${(x0 + x1) / 2}" y="${fy(y1) + .55}">${label}</text>`;
+  svg += `<path id="cone" class="cone" d=""/>`;
+  for (const [id, s] of Object.entries(S))
+    svg += `<circle class="node" data-id="${id}" cx="${s.x}" cy="${fy(s.y)}" r=".28"><title>${s.label}</title></circle>`;
+  svg += '</svg>';
+  const map = document.getElementById('map');
+  map.innerHTML = svg;
+  map.querySelectorAll('.node').forEach(n => n.addEventListener('click', () => go(n.dataset.id)));
+
+  function updateMap() {
+    const id = viewer.getScene(), s = S[id];
+    map.querySelectorAll('.node').forEach(n => n.classList.toggle('cur', n.dataset.id === id));
+    const yaw = viewer.getYaw() * Math.PI / 180, half = viewer.getHfov() / 2 * Math.PI / 180, r = 2.2;
+    const p = a => `${s.x + Math.sin(a) * r},${fy(s.y + Math.cos(a) * r)}`;
+    document.getElementById('cone').setAttribute('d', `M${s.x},${fy(s.y)} L${p(yaw - half)} L${p(yaw + half)} Z`);
+    requestAnimationFrame(updateMap);
+  }
+  viewer.on('scenechange', id => {
+    document.getElementById('room').textContent = S[id].label;
+    document.getElementById('fade').style.opacity = 0;
+    setTimeout(() => busy = false, 300);
+  });
+  viewer.on('load', () => { document.getElementById('room').textContent = S[viewer.getScene()].label; });
+  requestAnimationFrame(updateMap);
+})();
+</script>
+</body>
+</html>
