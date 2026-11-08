@@ -1,0 +1,190 @@
+{
+  "start": "living",
+  "scenes": {
+    "living": {
+      "x": 2.2,
+      "y": 3.4,
+      "label": "Living room",
+      "links": [
+        {
+          "to": "kitchen",
+          "yaw": 98.97,
+          "pitch": -15.81
+        },
+        {
+          "to": "hall_w",
+          "yaw": 10.62,
+          "pitch": -31.15
+        }
+      ]
+    },
+    "kitchen": {
+      "x": 8.3,
+      "y": 3.0,
+      "label": "Kitchen & dining",
+      "links": [
+        {
+          "to": "living",
+          "yaw": -94.97,
+          "pitch": -24.31
+        },
+        {
+          "to": "hall_e",
+          "yaw": 19.29,
+          "pitch": -25.94
+        }
+      ]
+    },
+    "hall_w": {
+      "x": 2.5,
+      "y": 5.75,
+      "label": "Entry hall",
+      "links": [
+        {
+          "to": "living",
+          "yaw": 180.0,
+          "pitch": -40.0
+        },
+        {
+          "to": "hall_mid",
+          "yaw": 90.0,
+          "pitch": -15.44
+        },
+        {
+          "to": "bedroom",
+          "yaw": 64.18,
+          "pitch": -30.03
+        }
+      ]
+    },
+    "hall_mid": {
+      "x": 6.45,
+      "y": 5.75,
+      "label": "Hallway",
+      "links": [
+        {
+          "to": "hall_w",
+          "yaw": -90.0,
+          "pitch": -15.44
+        },
+        {
+          "to": "hall_e",
+          "yaw": 90.0,
+          "pitch": -19.65
+        },
+        {
+          "to": "bath",
+          "yaw": 0.0,
+          "pitch": -40.0
+        }
+      ]
+    },
+    "hall_e": {
+      "x": 9.45,
+      "y": 5.75,
+      "label": "Hallway (east)",
+      "links": [
+        {
+          "to": "kitchen",
+          "yaw": -149.04,
+          "pitch": -40.0
+        },
+        {
+          "to": "hall_mid",
+          "yaw": -90.0,
+          "pitch": -19.65
+        },
+        {
+          "to": "office",
+          "yaw": 0.0,
+          "pitch": -40.0
+        }
+      ]
+    },
+    "bedroom": {
+      "x": 3.3,
+      "y": 8.2,
+      "label": "Bedroom",
+      "links": [
+        {
+          "to": "hall_w",
+          "yaw": 156.19,
+          "pitch": -28.51
+        }
+      ]
+    },
+    "bath": {
+      "x": 6.5,
+      "y": 8.2,
+      "label": "Bathroom",
+      "links": [
+        {
+          "to": "hall_mid",
+          "yaw": -178.32,
+          "pitch": -30.28
+        }
+      ]
+    },
+    "office": {
+      "x": 9.9,
+      "y": 8.3,
+      "label": "Office",
+      "links": [
+        {
+          "to": "hall_e",
+          "yaw": -165.96,
+          "pitch": -28.54
+        }
+      ]
+    }
+  },
+  "rooms": [
+    [
+      0,
+      0,
+      6,
+      5,
+      "Living"
+    ],
+    [
+      6,
+      0,
+      12,
+      5,
+      "Kitchen"
+    ],
+    [
+      0,
+      5,
+      12,
+      6.5,
+      "Hall"
+    ],
+    [
+      0,
+      6.5,
+      5,
+      10,
+      "Bedroom"
+    ],
+    [
+      5,
+      6.5,
+      8,
+      10,
+      "Bath"
+    ],
+    [
+      8,
+      6.5,
+      12,
+      10,
+      "Office"
+    ]
+  ],
+  "size": [
+    12,
+    10
+  ],
+  "hires": false
+}
