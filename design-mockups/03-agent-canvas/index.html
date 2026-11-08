@@ -1,0 +1,1041 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>build — agent canvas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  :root {
+    --bg: #101219; --panel: #171a23; --panel-2: #1e2230; --line: #2a2f40; --line-2: #363c52;
+    --text: #e7e9f2; --muted: #8a90a6; --faint: #5b6178;
+    --accent: #6c80ff; --blue: #2B45F5; --ok: #4fd18b; --bad: #ff5d6c; --warn: #ffc56b;
+    --pane: 420px; --r: 10px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body { font-family: "Geist", system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; line-height: 1.5; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button, textarea, input { font: inherit; color: inherit; }
+  button { cursor: pointer; background: none; border: 0; }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .mono { font-family: "Geist Mono", ui-monospace, monospace; font-size: 12px; }
+
+  /* ---------- stage (3D canvas) ---------- */
+  #stage { position: fixed; top: 0; right: 0; bottom: 0; left: 0; transition: left .7s cubic-bezier(.7,0,.2,1), top .7s cubic-bezier(.7,0,.2,1); background: radial-gradient(120% 90% at 60% 40%, #161a28 0%, var(--bg) 70%); }
+  body.app #stage { left: var(--pane); }
+  #stage.walking::after { display: none; }
+  #stage canvas { display: block; width: 100%; height: 100%; }
+  /* vignette over the 3D so the composer and overlays stay legible */
+  #stage::after { content: ""; position: absolute; inset: 0; pointer-events: none; transition: opacity .8s;
+    background: radial-gradient(75% 70% at 50% 50%, transparent 40%, #0c0e15cc 100%); }
+  body:not(.app) #stage::before { content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+    background: radial-gradient(45% 40% at 50% 52%, #0e1018b0 0%, transparent 100%); }
+
+  /* ---------- landing ---------- */
+  #landing { position: fixed; inset: 0; display: grid; place-items: center; padding: 24px 16px; z-index: 5; transition: opacity .45s, transform .6s; }
+  body.app #landing { opacity: 0; pointer-events: none; transform: scale(.98); }
+  .land-inner { width: min(680px, 100%); }
+  .land-inner .build-lockup { margin-bottom: 36px; }
+  .land-inner h1 { font-size: clamp(30px, 5vw, 48px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.04; max-width: 17ch; }
+  .land-inner p.sub { color: var(--muted); margin: 14px 0 28px; max-width: 52ch; font-size: 15px; }
+  .composer { background: color-mix(in srgb, var(--panel) 88%, transparent); border: 1px solid var(--line-2); border-radius: 16px; padding: 14px 14px 12px; backdrop-filter: blur(12px); box-shadow: 0 30px 80px -30px #000, 0 0 0 6px color-mix(in srgb, var(--accent) 6%, transparent); }
+  .composer textarea { width: 100%; resize: none; background: none; border: 0; outline: none; font-size: 17px; line-height: 1.45; min-height: 78px; }
+  .composer-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 6px; }
+  .composer-row .hint { color: var(--faint); font-size: 12px; }
+  .btn { background: var(--blue); color: #fff; border-radius: 9px; padding: 9px 16px; font-weight: 500; display: inline-flex; gap: 8px; align-items: center; transition: background .15s, transform .15s; }
+  .btn:hover { background: #3d55ff; } .btn:active { transform: translateY(1px); }
+  .btn[disabled] { opacity: .5; cursor: default; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+  .chip { border: 1px solid var(--line); border-radius: 999px; padding: 6px 12px; color: var(--muted); font-size: 13px; transition: border-color .15s, color .15s; }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+
+  /* ---------- agent pane ---------- */
+  #pane { position: fixed; left: 0; top: 0; bottom: 0; width: var(--pane); background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; transform: translateX(-100%); transition: transform .7s cubic-bezier(.7,0,.2,1); z-index: 4; }
+  body.app #pane { transform: none; }
+  .pane-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--line); }
+  .pane-head .proj { color: var(--muted); font-size: 13px; max-width: 60%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #feed { flex: 1; overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 14px; scroll-behavior: smooth; }
+  #feed::-webkit-scrollbar { width: 8px; } #feed::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; }
+  .bubble { align-self: flex-end; max-width: 88%; background: var(--panel-2); border: 1px solid var(--line-2); border-radius: 14px 14px 4px 14px; padding: 10px 13px; font-size: 14px; }
+  .agent-msg { font-size: 14px; }
+  .agent-msg .who { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; margin-bottom: 8px; }
+  .agent-msg .who svg { flex: none; }
+
+  .think { border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: color-mix(in srgb, var(--bg) 40%, var(--panel)); }
+  .think-head { display: flex; justify-content: space-between; align-items: center; padding: 9px 12px; color: var(--muted); font-size: 12.5px; border-bottom: 1px solid var(--line); }
+  .think-head b { color: var(--text); font-weight: 500; }
+  .step { border-bottom: 1px solid var(--line); }
+  .step:last-child { border-bottom: 0; }
+  .step-h { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; text-align: left; font-size: 13.5px; }
+  .step-h .lab { flex: 1; } .step-h .t { color: var(--faint); font-size: 12px; }
+  .step-h .chev { color: var(--faint); transition: transform .2s; }
+  .step.collapsed .chev { transform: rotate(-90deg); }
+  .step-b { padding: 0 12px 12px 38px; display: grid; gap: 8px; }
+  .step.collapsed .step-b { display: none; }
+  .ico { width: 16px; height: 16px; flex: none; display: grid; place-items: center; }
+  .spin { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line-2); border-top-color: var(--accent); animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .thought { color: var(--muted); font-size: 13px; }
+  .thought .caret { display: inline-block; width: 6px; height: 13px; background: var(--accent); vertical-align: -2px; margin-left: 2px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .tool { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--bg); }
+  .tool-h { display: flex; justify-content: space-between; align-items: center; padding: 6px 10px; background: var(--panel-2); color: var(--muted); font-size: 12px; border-bottom: 1px solid var(--line); }
+  .tool-h code { color: var(--accent); }
+  .tool table { width: 100%; border-collapse: collapse; }
+  .tool td { padding: 4px 10px; border-top: 1px solid color-mix(in srgb, var(--line) 50%, transparent); white-space: nowrap; }
+  .tool tr:first-child td { border-top: 0; }
+  .tool td.r { text-align: right; color: var(--muted); }
+  .tool td.adj { color: var(--faint); overflow: hidden; text-overflow: ellipsis; max-width: 110px; }
+  .row-in { animation: rowin .35s ease-out both; }
+  @keyframes rowin { from { opacity: 0; transform: translateY(4px); background: color-mix(in srgb, var(--accent) 18%, transparent); } }
+  .lines { padding: 6px 10px; display: grid; gap: 2px; }
+  .lines div { color: var(--muted); } .lines div b { color: var(--text); font-weight: 500; }
+  .rule { display: grid; grid-template-columns: 16px 1fr; gap: 8px; padding: 6px 10px; border-top: 1px solid color-mix(in srgb, var(--line) 50%, transparent); font-size: 12.5px; align-items: start; }
+  .rule:first-child { border-top: 0; }
+  .rule .lab { color: var(--faint); transition: color .2s; }
+  .rule.pass .lab { color: var(--text); } .rule.fail .lab { color: var(--bad); }
+  .rule .msg { grid-column: 2; color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--bad) 10%, transparent); border-left: 2px solid var(--bad); padding: 5px 8px; border-radius: 0 6px 6px 0; margin-top: 4px; }
+  .rule .fixed { grid-column: 2; color: var(--ok); font-size: 12px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line-2); margin-top: 5px; }
+  .fix { border: 1px solid color-mix(in srgb, var(--warn) 40%, var(--line)); border-radius: 8px; overflow: hidden; }
+  .fix .tool-h { background: color-mix(in srgb, var(--warn) 10%, var(--panel-2)); color: var(--warn); }
+  .fix p { padding: 8px 10px; color: var(--text); font-size: 13px; }
+  .diff { overflow-x: auto; }
+  .diff div { padding: 2px 10px; white-space: pre; min-width: max-content; }
+  .diff .m { background: color-mix(in srgb, var(--bad) 13%, transparent); color: #ffb3ba; }
+  .diff .p { background: color-mix(in srgb, var(--ok) 13%, transparent); color: #a9f0c8; }
+  .diff .n { color: var(--muted); }
+  .agent-msg .ghost.ex { margin: 6px 6px 0 0; }
+
+  .summary { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: grid; gap: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+  .stats div { background: var(--panel-2); border-radius: 8px; padding: 8px 10px; }
+  .stats b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.02em; }
+  .stats span { color: var(--muted); font-size: 11.5px; }
+  .summary .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+  .ghost { border: 1px solid var(--line-2); border-radius: 8px; padding: 6px 12px; font-size: 13px; color: var(--text); }
+  .ghost:hover { border-color: var(--accent); }
+
+  .atts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .atts.two { grid-template-columns: repeat(2, 1fr); margin-top: 10px; }
+  .att { border: 1px solid var(--line); border-radius: 9px; overflow: hidden; background: radial-gradient(90% 80% at 50% 35%, #232840 0%, #141722 100%); transition: border-color .2s; }
+  .att:hover { border-color: color-mix(in srgb, var(--accent) 60%, var(--line)); }
+  .att-3d { height: 92px; }
+  .atts.two .att-3d { height: 112px; }
+  .att figcaption { display: grid; gap: 1px; padding: 5px 8px 6px; border-top: 1px solid var(--line); font-size: 11.5px; line-height: 1.3; }
+  .att figcaption b { font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .att figcaption span { color: var(--muted); white-space: nowrap; font-size: 11px; }
+  .att.after figcaption b { color: var(--accent); }
+
+  .pane-foot { padding: 12px; border-top: 1px solid var(--line); }
+  .pane-foot .composer { padding: 10px 10px 8px; border-radius: 12px; box-shadow: none; }
+  .pane-foot textarea { font-size: 14px; min-height: 40px; }
+  .pane-foot .btn { padding: 6px 12px; font-size: 13px; }
+
+  /* ---------- canvas overlays ---------- */
+  .ui { position: fixed; z-index: 3; opacity: 0; pointer-events: none; transition: opacity .4s .4s; }
+  body.app .ui { opacity: 1; pointer-events: auto; }
+  #canvasTop { top: 14px; left: calc(var(--pane) + 16px); right: 16px; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+  .tabs { display: inline-flex; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 3px; backdrop-filter: blur(8px); }
+  .tabs button { padding: 5px 14px; border-radius: 7px; color: var(--muted); font-size: 13px; }
+  .tabs button[aria-selected="true"] { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line-2); }
+  .tabs button[disabled] { opacity: .35; cursor: default; }
+  #canvasTop .tbtn { margin-left: auto; background: color-mix(in srgb, var(--panel) 85%, transparent); backdrop-filter: blur(8px); padding: 6px 12px; border-radius: 10px; }
+  .status { color: var(--muted); font-size: 12.5px; display: flex; gap: 8px; align-items: center; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 6px 12px; }
+  .status .live { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 25%, transparent); animation: pulse 1.2s infinite; }
+  .status.done .live { background: var(--ok); animation: none; box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 20%, transparent); }
+  @keyframes pulse { 50% { opacity: .35; } }
+
+  #timeline { bottom: 16px; left: calc(var(--pane) + 16px); right: 16px; display: flex; align-items: center; gap: 14px; background: color-mix(in srgb, var(--panel) 85%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 9px 14px; backdrop-filter: blur(8px); }
+  .track { position: relative; flex: 1; height: 26px; }
+  .track .bar { position: absolute; left: 0; right: 0; top: 7px; height: 3px; background: var(--line); border-radius: 3px; }
+  .track .fill { position: absolute; left: 0; top: 7px; height: 3px; background: var(--accent); border-radius: 3px; width: 0; }
+  .track .head { position: absolute; top: 3px; width: 11px; height: 11px; margin-left: -5.5px; border-radius: 50%; background: var(--text); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 45%, transparent); left: 0; }
+  .track .mk { position: absolute; top: 15px; font-size: 11px; color: var(--faint); white-space: nowrap; transform: translateX(-2px); transition: color .2s; }
+  .track .mk::before { content: ""; position: absolute; left: 1px; top: -9px; width: 1px; height: 7px; background: var(--line-2); }
+  .track .mk.on { color: var(--text); }
+  #timer { color: var(--text); font-size: 13px; min-width: 52px; text-align: right; }
+
+  #cursor { position: fixed; z-index: 3; pointer-events: none; opacity: 0; transition: opacity .3s; left: 0; top: 0; will-change: transform; }
+  #dragHint { color: var(--muted); font-size: 12px; background: color-mix(in srgb, var(--panel) 85%, transparent); backdrop-filter: blur(8px); border: 1px solid var(--line); border-radius: 10px; padding: 6px 10px; white-space: nowrap; }
+  #dragHint kbd { font: inherit; font-size: 11px; border: 1px solid var(--line); border-radius: 4px; padding: 0 4px; }
+  #cursor svg { display: block; filter: drop-shadow(0 2px 6px #0008); }
+  #cursor span { position: absolute; left: 14px; top: 16px; background: var(--blue); color: #fff; font-size: 12px; padding: 3px 8px; border-radius: 6px; white-space: nowrap; }
+  #cursor.bad span { background: var(--bad); }
+
+  #planView { position: fixed; z-index: 2; top: 64px; bottom: 72px; left: calc(var(--pane) + 16px); right: 16px; display: none; place-items: center; }
+  #planView.show { display: grid; }
+  #planView .sheet { width: min(100%, 1000px); }
+  #planView svg { width: 100%; height: auto; max-height: calc(100vh - 160px); }
+  .plan-svg .p-room { fill: #1a1e2b; stroke: none; transition: fill .2s; }
+  .plan-svg .p-room:hover { fill: #22283a; }
+  .plan-svg .p-room[data-type="hall"] { fill: #151925; }
+  .plan-svg .p-wall { stroke: #dfe3f0; stroke-width: .33; stroke-linecap: square; }
+  .plan-svg .p-wall.ext { stroke-width: .55; }
+  .plan-svg .p-win { stroke: var(--accent); stroke-width: .7; }
+  .plan-svg .p-door { stroke: var(--accent); stroke-width: .3; fill: none; }
+  .plan-svg .p-label text { fill: var(--text); font-size: 1.05px; font-family: Geist, sans-serif; font-weight: 500; }
+  .plan-svg .p-label .p-dim { fill: var(--muted); font-size: .8px; font-weight: 400; }
+
+  #walkHud { position: fixed; z-index: 3; inset: 0; pointer-events: none; display: none; }
+  #walkHud.show { display: block; }
+  #walkHud .room { position: absolute; top: 70px; left: calc(var(--pane) + 50%); transform: translateX(calc(-50% - var(--pane) / 2)); background: #000a; border: 1px solid #fff2; padding: 6px 14px; border-radius: 999px; font-size: 13px; backdrop-filter: blur(6px); }
+  #walkHud .keys { position: absolute; bottom: 78px; left: calc(var(--pane) + 16px); background: #000a; border-radius: 10px; padding: 8px 12px; font-size: 12px; color: #cfd3e3; backdrop-filter: blur(6px); }
+  #walkHud .keys kbd { font-family: "Geist Mono", monospace; background: #fff1; border: 1px solid #fff2; border-radius: 4px; padding: 0 5px; margin: 0 1px; }
+  #walkHud .mini { position: absolute; bottom: 78px; right: 16px; width: 210px; background: #0b0d14d0; border: 1px solid var(--line-2); border-radius: 10px; padding: 8px; backdrop-filter: blur(6px); }
+  #walkHud .mini .p-label { display: none; }
+  #walkHud .mini .p-room { fill: #1a1e2b; } #walkHud .mini .p-room.here { fill: color-mix(in srgb, var(--accent) 35%, #1a1e2b); }
+  #walkHud .cross { position: absolute; left: calc(var(--pane) + (100% - var(--pane)) / 2); top: 50%; width: 6px; height: 6px; margin: -3px; border-radius: 50%; background: #fff9; }
+
+  @media (max-width: 820px) {
+    :root { --pane: 0px; }
+    body { overflow: auto; }
+    body.app #stage { left: 0; bottom: 52vh; }
+    #pane { top: 48vh; width: 100%; transform: translateY(100%); border-right: 0; border-top: 1px solid var(--line); }
+    body.app #pane { transform: none; }
+    #canvasTop { left: 12px; right: 12px; gap: 8px; overflow-x: auto; scrollbar-width: none; } #timeline { display: none; }
+    .tabs button { padding: 5px 10px; white-space: nowrap; }
+    #canvasTop .tbtn { white-space: nowrap; padding: 6px 10px; font-size: 12.5px; }
+    #dragHint { display: none; }
+    .status { padding: 8px; } .status #statusText { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    #planView { bottom: 54vh; top: 56px; left: 8px; right: 8px; }
+    #walkHud .mini { width: 140px; bottom: 54vh; } #walkHud .keys { display: none; }
+    #walkHud .cross { top: 24vh; left: 50%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .001ms !important; transition-duration: .001ms !important; }
+  }
+</style>
+</head>
+<body>
+<div id="stage"></div>
+
+<section id="landing" aria-label="Start a new home">
+  <div class="land-inner">
+    <div id="lockup"></div>
+    <h1>Describe a home. Walk through it a minute later.</h1>
+    <p class="sub">Tell build what you need. It plans the rooms, places every wall, checks the layout against seven rules, and hands you a house you can walk through in first person.</p>
+    <form class="composer" id="landForm">
+      <label for="prompt" class="sr" style="position:absolute;left:-9999px">Describe your home</label>
+      <textarea id="prompt" rows="3"></textarea>
+      <div class="composer-row">
+        <span class="hint">Single story · rooms, size, anything you care about</span>
+        <button class="btn" type="submit" id="genBtn">Generate
+          <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      </div>
+    </form>
+    <div class="chips" id="chips"></div>
+  </div>
+</section>
+
+<aside id="pane" aria-label="Build conversation">
+  <div class="pane-head"><span id="lockupSm"></span><span class="proj">Untitled home</span></div>
+  <div id="feed" aria-live="polite"></div>
+  <div class="pane-foot">
+    <form class="composer" id="editForm">
+      <label for="editIn" style="position:absolute;left:-9999px">Ask for a change</label>
+      <textarea id="editIn" rows="2" placeholder="Ask for a change, like “make the kitchen bigger”" disabled></textarea>
+      <div class="composer-row"><span class="hint">Only the rooms you name will change</span><button class="btn" type="submit" id="editBtn" disabled>Send</button></div>
+    </form>
+  </div>
+</aside>
+
+<div class="ui" id="canvasTop">
+  <div class="tabs" role="tablist" aria-label="View">
+    <button role="tab" data-tab="3d" aria-selected="true">3D</button>
+    <button role="tab" data-tab="plan" aria-selected="false" disabled>Plan</button>
+    <button role="tab" data-tab="walk" aria-selected="false" disabled>Walk through</button>
+  </div>
+  <button class="ghost tbtn" id="cutBtn" aria-pressed="false" hidden>Show full walls</button>
+  <span id="dragHint" hidden>Drag furniture to move it · <kbd>R</kbd> rotates</span>
+  <div class="status" id="status"><span class="live"></span><span id="statusText">Starting</span></div>
+</div>
+<div class="ui" id="timeline"><div class="track" id="track"><div class="bar"></div><div class="fill" id="tfill"></div><div class="head" id="thead"></div></div><span id="timer" class="num mono">0.0 s</span></div>
+<div id="cursor" aria-hidden="true"><svg width="18" height="20" viewBox="0 0 18 20"><path d="M1 1l15 8-7 2-3 7z" fill="#6c80ff" stroke="#fff" stroke-width="1.4" stroke-linejoin="round"/></svg><span>build</span></div>
+<div id="planView"><div class="sheet" id="planSheet"></div></div>
+<div id="walkHud"><div class="room" id="walkRoom">Living Room</div><div class="cross"></div>
+  <div class="keys"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> walk · drag to look · <kbd>Shift</kbd> faster · <kbd>Esc</kbd> exit</div>
+  <div class="mini" id="mini"></div></div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { LAYOUT, PHASES, RULES, DEFAULT_PROMPT, DEFAULT_PLAN, lockupHTML, markSVG, buildHouse, buildScript, playScript, generate,
+  tween, tickTweens, ease, smoothDamp, createWalker, planSVG, fmtFt, roomById, sqft, buildFurniture, editLayout, FURNITURE_STYLES, WALL_H, EYE_H } from "../core/core.js";
+import { enhanceRenderer, fitSun } from "../core/render.js";
+import { createFurnitureDrag } from "../core/interact.js";
+import { addSiteButton } from "../core/site.js";
+import { addPhotorealButton } from "../core/photoreal.js";
+import { createFloatingIsland, createCloudSea, attachParallax, createMist, cameraDive, createMiniStage, roomDiorama } from "../core/atmosphere.js";
+
+// test hook: ?debug=raf drives frames from timers so the flow runs in a hidden/background preview tab
+if (new URLSearchParams(location.search).get("debug") === "raf") window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const $ = (s, el = document) => el.querySelector(s);
+const T = (ms, fn, e, d) => tween(RM ? 1 : ms, fn, e, RM ? 0 : d);
+const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+$("#lockup").innerHTML = lockupHTML({ color: "#6c80ff", ink: "#e7e9f2", size: 34 });
+$("#lockupSm").innerHTML = lockupHTML({ color: "#6c80ff", ink: "#e7e9f2", size: 20 });
+$("#prompt").value = DEFAULT_PROMPT;
+const EXAMPLES = ["2 bed cottage, big kitchen, about 1,100 sq ft", "4 bed family home with a mudroom, 2,400 sq ft", "Studio with a separate office and lots of light, 700 sq ft"];
+$("#chips").innerHTML = EXAMPLES.map((e) => `<button type="button" class="chip">${e}</button>`).join("");
+$("#chips").addEventListener("click", (e) => { if (e.target.matches(".chip")) { $("#prompt").value = e.target.textContent; $("#prompt").focus(); } });
+$("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) $("#landForm").requestSubmit(); });
+
+// ================= 3D =================
+const stage = $("#stage");
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(2, devicePixelRatio));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+stage.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+{ // radial graphite backdrop, painted once (sprite clouds need an opaque background to blend against)
+  const c = document.createElement("canvas"); c.width = 512; c.height = 512; const g = c.getContext("2d");
+  const gr = g.createRadialGradient(300, 190, 10, 256, 256, 400);
+  gr.addColorStop(0, "#1d2236"); gr.addColorStop(0.55, "#131622"); gr.addColorStop(1, "#0d0f17");
+  g.fillStyle = gr; g.fillRect(0, 0, 512, 512);
+  scene.background = new THREE.CanvasTexture(c); scene.background.colorSpace = THREE.SRGBColorSpace;
+}
+// Landing camera: perspective, above the cloud ring. Generate dives it through the clouds to the build view.
+const landCam = new THREE.PerspectiveCamera(34, 1, 0.5, 900);
+landCam.position.set(70, 44, 138); landCam.lookAt(0, -20, 0);
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -500, 500);
+ortho.position.set(60, 52, 60); ortho.lookAt(0, 0, 0);
+let frustum = 86;
+const persp = new THREE.PerspectiveCamera(72, 1, 0.1, 400);
+let camera = landCam;
+const controls = new OrbitControls(ortho, renderer.domElement);
+controls.enableDamping = true; controls.enabled = false; controls.enablePan = false;
+controls.minZoom = 0.6; controls.maxZoom = 3; controls.maxPolarAngle = 1.25;
+
+// Filmic tone mapping + a dim studio environment: materials get soft reflections without lifting the dark mood.
+enhanceRenderer(renderer, scene, { exposure: 1.08, envIntensity: 0.32 });
+const hemi = new THREE.HemisphereLight(0xc9d2ff, 0x10121a, 0.85); scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e6, 1.9);
+sun.position.set(34, 70, 26); fitSun(sun, LAYOUT.footprint.width_ft, LAYOUT.footprint.depth_ft);
+scene.add(sun);
+
+const para = new THREE.Group(); scene.add(para);
+const root = new THREE.Group(); para.add(root);
+const ACCENT = new THREE.Color(0x6c80ff), BAD = new THREE.Color(0xff5d6c), OK = new THREE.Color(0x4fd18b);
+const FLOOR = { living: 0x2a3042, kitchen: 0x30364a, dining: 0x2c3245, bedroom: 0x262b3b, primary_bedroom: 0x282d3e, bathroom: 0x2a3446, office: 0x2b2f40, laundry: 0x272c3a, hall: 0x1f2331, entry: 0x1f2331, closet: 0x22263a };
+
+// Colored furniture (sage sofa, mustard + clay accents, per-bedroom bedding) on the graphite floors.
+// "dark" is lifted a little so black pieces don't vanish into the floor.
+const FURN_STYLE = { ...FURNITURE_STYLES.colorful, dark: 0x454a5e, rug: 0xcdb894, perType: { ...FURNITURE_STYLES.colorful.perType, dining: { soft: 0x52576b, rug: 0xa98e6a } } };
+let plan = DEFAULT_PLAN, layout = LAYOUT, house = null, furn = null, drag = null;
+let KEEP_ARRANGEMENT = null; // furniture the user dragged, carried across edit rebuilds
+function makeHouse(l) {
+  if (house) root.remove(house.group);
+  if (furn) root.remove(furn.group);
+  house = buildHouse(l, { floorColor: (r) => FLOOR[r.type] ?? 0x262b3b, wallColor: 0xdfe3ee, exteriorWallColor: 0xeef0f6, glassColor: 0x8ea0ff, frameColor: 0x6c80ff });
+  root.add(house.group);
+  furn = buildFurniture(l, FURN_STYLE, { roundedBox: RoundedBoxGeometry, items: true, arrangement: KEEP_ARRANGEMENT }); KEEP_ARRANGEMENT = null;
+  root.add(furn.group);
+  drag?.setTarget(furn, l);
+  walkerDirty = true;
+  return house;
+}
+let walkerDirty = true;
+makeHouse(layout);
+for (const g of Object.values(furn.byRoom)) g.visible = false;
+
+// Floating island the house is built on (replaces the flat shadow catcher). Graphite land, blue rim.
+let island = null;
+function makeIsland(l) {
+  if (island) { root.remove(island.group); island.group.traverse((o) => { o.geometry?.dispose(); }); }
+  const entryW = house.toWorld(l.entrance.x, l.entrance.y);
+  island = createFloatingIsland(l.footprint.width_ft, l.footprint.depth_ft, {
+    grass: 0x39425c, grassEdge: 0x6c80ff, dirt: 0x343a55, rock: 0x272c42, rockDark: 0x161927, path: 0x56608a,
+    trunk: 0x4a5070, leaf: [0x4a5a8a, 0x56679c, 0x3e4c78], shard: 0x363c58, pad: 13, depth: 40, trees: 8, entrance: [entryW.x, entryW.z],
+  });
+  // cap top sits ~0.5 ft above y=0 in atmosphere.js; drop it so floors (top at y=0) aren't covered by grass
+  island.group.position.y = -0.55;
+  island.group.traverse((o) => { if (o.isMesh) o.receiveShadow = true; });
+  island.parts.cap.material.emissive?.set(0x0b0d16);
+  root.add(island.group);
+}
+makeIsland(layout);
+// Cloud seas: a deep layer far below (always), a ring above for the landing view (dived through, then faded),
+// and a few accent-lit puffs so the dark sea catches the brand blue.
+const seaLow = createCloudSea({ count: 150, radius: 230, inner: 10, yMin: -95, yMax: -32, size: [34, 74], color: 0x313852, shadow: 0x12141e, opacity: 0.85, seed: 4 });
+const seaGlow = createCloudSea({ count: 26, radius: 170, inner: 30, yMin: -70, yMax: -36, size: [30, 60], color: 0x5466c8, shadow: 0x2a3366, opacity: 0.22, seed: 12 });
+const seaHigh = createCloudSea({ count: 60, radius: 200, inner: 50, yMin: -8, yMax: 26, size: [24, 50], color: 0x434c70, shadow: 0x1c2030, opacity: 0.7, seed: 8 });
+// cool blue rim light from behind so the island's silhouette separates from the dark sky
+const rim = new THREE.DirectionalLight(0x6c80ff, 1.4); rim.position.set(-50, 10, -60); scene.add(rim);
+scene.add(seaLow.group, seaGlow.group, seaHigh.group);
+const parallax = RM ? null : attachParallax(para, { yaw: 0.22, pitch: 0.06, sway: 0.07, swaySpeed: 0.45 });
+const mist = createMist(document.body, { color: "#151823", tint: "#1f2436", z: 20 });
+
+// Landing silhouette: wall edges only, slowly rotating.
+const silhouette = new THREE.Group();
+const edgeMat = new THREE.LineBasicMaterial({ color: 0x6c80ff, transparent: true, opacity: 0.35 });
+for (const w of house.walls) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(w.geometry), edgeMat); e.position.copy(w.position); silhouette.add(e); }
+root.add(silhouette);
+function setHouseVisible(v, t = 0) {
+  for (const m of [...Object.values(house.floors), ...house.walls, ...house.windows, ...house.doorFrames]) m.visible = v;
+}
+setHouseVisible(false);
+
+// Room volumes (the "thinking" layer)
+const volumes = {};
+const volGeo = new THREE.BoxGeometry(1, 1, 1); volGeo.translate(0, 0.5, 0);
+const volEdges = new THREE.EdgesGeometry(volGeo);
+let W0 = layout.footprint.width_ft, D0 = layout.footprint.depth_ft;
+const toW = (x, y) => new THREE.Vector3(x - W0 / 2, 0, y - D0 / 2);
+function placeVolume(r, { from } = {}) {
+  let v = volumes[r.id];
+  if (!v) {
+    const mat = new THREE.MeshBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.12, depthWrite: false });
+    const lmat = new THREE.LineBasicMaterial({ color: ACCENT, transparent: true, opacity: 0.9 });
+    const g = new THREE.Group(); g.add(new THREE.Mesh(volGeo, mat)); g.add(new THREE.LineSegments(volEdges, lmat));
+    g.userData = { mat, lmat, rect: { ...(from ?? r) } };
+    v = volumes[r.id] = g; root.add(g);
+    applyRect(g, g.userData.rect, 0.01);
+    T(620, (p) => applyRect(g, g.userData.rect, Math.max(0.01, p)), ease.spring);
+  }
+  return v;
+}
+function applyRect(g, rc, hScale = 1) {
+  const c = toW(rc.x + rc.w / 2, rc.y + rc.h / 2);
+  g.position.set(c.x, 0, c.z); g.scale.set(rc.w - 0.3, (rc.type === "hall" ? 1.2 : 3.2) * hScale, rc.h - 0.3);
+}
+function tintVolume(id, color, op = 0.22) {
+  const v = volumes[id]; if (!v) return;
+  const from = v.userData.mat.color.clone();
+  T(260, (p) => { v.userData.mat.color.copy(from).lerp(color, p); v.userData.lmat.color.copy(from).lerp(color, p); v.userData.mat.opacity = 0.12 + (op - 0.12) * p; });
+}
+function moveVolume(id, rect) {
+  const v = volumes[id]; const a = { ...v.userData.rect };
+  return T(800, (p) => { const rc = { ...a, x: a.x + (rect.x - a.x) * p, w: a.w + (rect.w - a.w) * p, y: a.y + (rect.y - a.y) * p, h: a.h + (rect.h - a.h) * p }; v.userData.rect = rc; applyRect(v, rc); }, ease.settle);
+}
+
+// Footprint outline: appears when planning starts, before any room exists
+let fpLine, fpGrid, scan;
+// footprint outline, grid and the wall-raise scan plane all depend on the house size: rebuilt per plan
+function makeGuides() {
+  for (const o of [fpLine, fpGrid, scan]) if (o) { root.remove(o); o.geometry.dispose(); }
+  W0 = layout.footprint.width_ft; D0 = layout.footprint.depth_ft;
+  fpLine = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(W0, 0.01, D0)), new THREE.LineDashedMaterial({ color: 0x8a90a6, dashSize: 0.8, gapSize: 0.6, transparent: true, opacity: 0 }));
+  fpLine.computeLineDistances(); fpLine.position.y = 0.02; root.add(fpLine);
+  const M = Math.max(W0, D0);
+  fpGrid = new THREE.GridHelper(M, M / 2, 0x2a2f40, 0x2a2f40);
+  fpGrid.scale.set(W0 / M, 1, D0 / M); fpGrid.material.transparent = true; fpGrid.material.opacity = 0; root.add(fpGrid);
+  scan = new THREE.Mesh(new THREE.PlaneGeometry(W0 + 6, D0 + 6), new THREE.MeshBasicMaterial({ color: 0x6c80ff, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  scan.rotation.x = -Math.PI / 2; root.add(scan);
+  fitSun(sun, W0, D0);
+}
+makeGuides();
+
+// Furniture materialises with the same blue scan + edge glow as the walls.
+function furnishRoom(id) {
+  const g = furn.byRoom[id], r = roomById(id, layout); if (!g || !r) return Promise.resolve();
+  g.visible = true;
+  const lm = new THREE.LineBasicMaterial({ color: ACCENT, transparent: true, opacity: 1, depthWrite: false });
+  const lines = [];
+  // each item (bed + bedding, sofa + cushions...) drops in as one piece, outlined in the scan blue
+  g.children.forEach((item, i) => {
+    item.traverse((m) => { if (m.isMesh) { const e = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30), lm); m.add(e); lines.push(e); } });
+    item.scale.y = 0.001; item.position.y = 2.2;
+    T(700, (p) => { item.scale.y = Math.max(0.001, Math.min(1.15, p)); item.position.y = 2.2 * (1 - p); }, ease.drop, 60 + i * 55);
+  });
+  const sp = new THREE.Mesh(new THREE.PlaneGeometry(r.w - 0.4, r.h - 0.4), new THREE.MeshBasicMaterial({ color: 0x6c80ff, transparent: true, opacity: 0.45, side: THREE.DoubleSide, depthWrite: false, blending: THREE.AdditiveBlending }));
+  sp.rotation.x = -Math.PI / 2; const c = toW(r.x + r.w / 2, r.y + r.h / 2); sp.position.set(c.x, 0.05, c.z); root.add(sp);
+  T(1000, (p) => { sp.position.y = 0.05 + p * 5; sp.material.opacity = 0.45 * (1 - p); }, ease.outCubic).then(() => { root.remove(sp); sp.geometry.dispose(); sp.material.dispose(); });
+  return T(900, (p) => (lm.opacity = 1 - p), ease.inOutCubic, 900).then(() => { lines.forEach((e) => { e.parent?.remove(e); e.geometry.dispose(); }); lm.dispose(); });
+}
+// Cutaway: drop walls to 4 ft (like a dollhouse) so the furniture reads from above.
+let cut = false;
+const CUT = 4 / WALL_H;
+const wallTarget = (w) => (cut && w.userData.part === "full" ? CUT : 1);
+function setCutaway(on, ms = 700) {
+  cut = on;
+  for (const w of house.walls) {
+    if (w.userData.part === "header") { w.visible = !on; continue; }
+    const from = w.scale.y, to = wallTarget(w);
+    if (ms && !RM) T(ms, (p) => (w.scale.y = from + (to - from) * p), ease.inOutCubic); else w.scale.y = to;
+  }
+  for (const m of [...house.windows, ...house.doorFrames]) m.visible = !on;
+  const b = $("#cutBtn"); if (b) { b.setAttribute("aria-pressed", on); b.textContent = on ? "Show full walls" : "Cut walls away"; }
+}
+function pieceSummary(id) {
+  const counts = {};
+  for (const it of furn.byRoom[id]?.children ?? []) { const n = it.userData.name; if (n && !/^(art|towel|backsplash)$/.test(n)) counts[n] = (counts[n] ?? 0) + 1; }
+  return Object.entries(counts).map(([n, c]) => (c > 1 ? `${c} ${n}s` : n)).join(", ") || "nothing — keeps the walkway clear";
+}
+
+// fit the orthographic frame to the current house (long plans need more room)
+function fitFrustum(ms = 0) {
+  const target = Math.max(W0 * 1.6, D0 * 2.4, 78); // the old 50 ft house sat well at 86
+  if (!ms || RM) { frustum = target; resize(); return Promise.resolve(); }
+  const f0 = frustum;
+  return T(ms, (p) => { frustum = f0 + (target - f0) * p; resize(); }, ease.settle);
+}
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false);
+  const a = w / h;
+  const fh = a < 1.2 ? frustum / a * 0.95 : frustum * 0.88;
+  ortho.left = -fh * a / 2; ortho.right = fh * a / 2; ortho.top = fh / 2; ortho.bottom = -fh / 2; ortho.updateProjectionMatrix();
+  persp.aspect = a; persp.updateProjectionMatrix();
+  landCam.aspect = a; landCam.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(stage); resize();
+
+// Agent cursor follows a room in screen space
+const cursor = $("#cursor"); let cursorRoom = null;
+function pointCursor(id, label, bad = false) {
+  cursorRoom = id; cursor.querySelector("span").textContent = label; cursor.classList.toggle("bad", bad);
+  cursor.style.opacity = id ? 1 : 0;
+}
+function updateCursor() {
+  if (!cursorRoom || camera !== ortho || tab !== "3d") { cursor.style.opacity = 0; return; }
+  cursor.style.opacity = 1;
+  const v = volumes[cursorRoom]; const r = v?.userData.rect ?? roomById(cursorRoom, layout); if (!r) return;
+  const p = toW(r.x + r.w * 0.62, r.y + r.h * 0.4); p.y = 3.4; p.applyMatrix4(root.matrixWorld).project(ortho);
+  const rect = stage.getBoundingClientRect();
+  curTarget.x = rect.left + (p.x + 1) / 2 * rect.width; curTarget.y = rect.top + (1 - p.y) / 2 * rect.height;
+  if (curPos.x === null) { curPos.x = curTarget.x; curPos.y = curTarget.y; }
+}
+// the agent cursor glides between rooms (critically damped), never jumps
+const curTarget = { x: 0, y: 0 }, curPos = { x: null, y: null }, cvx = {}, cvy = {};
+function glideCursor(dt) {
+  if (curPos.x === null) return;
+  curPos.x = RM ? curTarget.x : smoothDamp(curPos.x, curTarget.x, cvx, 0.22, dt);
+  curPos.y = RM ? curTarget.y : smoothDamp(curPos.y, curTarget.y, cvy, 0.22, dt);
+  cursor.style.transform = `translate(${curPos.x.toFixed(1)}px, ${curPos.y.toFixed(1)}px)`;
+}
+
+// ================= feed / thinking UI =================
+const feed = $("#feed");
+const scrollFeed = () => (feed.scrollTop = feed.scrollHeight);
+const ICON = {
+  spin: `<span class="spin"></span>`,
+  done: `<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#4fd18b22" stroke="#4fd18b"/><path d="M5 8.2l2 2 4-4.2" fill="none" stroke="#4fd18b" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  fail: `<svg width="16" height="16" viewBox="0 0 16 16"><circle cx="8" cy="8" r="7" fill="#ff5d6c22" stroke="#ff5d6c"/><path d="M5.6 5.6l4.8 4.8M10.4 5.6l-4.8 4.8" stroke="#ff5d6c" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  chev: `<svg class="chev" width="12" height="12" viewBox="0 0 12 12"><path d="M3 4.5l3 3 3-3" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+};
+function streamText(el, text) {
+  if (RM) { el.textContent = text; return Promise.resolve(); }
+  return new Promise((res) => {
+    const caret = document.createElement("span"); caret.className = "caret";
+    let i = 0; const node = document.createTextNode(""); el.append(node, caret);
+    const id = setInterval(() => { i = Math.min(text.length, i + 3); node.data = text.slice(0, i); scrollFeed(); if (i >= text.length) { clearInterval(id); caret.remove(); res(); } }, 16);
+  });
+}
+function newThinkBlock(title) {
+  const wrap = document.createElement("div"); wrap.className = "agent-msg";
+  wrap.innerHTML = `<div class="who">${markSVG("#6c80ff", 14)}<span>build</span></div>
+    <div class="think"><div class="think-head"><span><b class="tt">${title}</b></span><span class="num mono tsec">0.0 s</span></div><div class="steps"></div></div>`;
+  feed.appendChild(wrap); scrollFeed();
+  return { el: wrap, steps: $(".steps", wrap), head: $(".tt", wrap), sec: $(".tsec", wrap), cur: null, t0: performance.now() };
+}
+function openStep(tb, label) {
+  if (tb.cur) closeStep(tb, true);
+  const s = document.createElement("div"); s.className = "step";
+  s.innerHTML = `<button class="step-h" aria-expanded="true"><span class="ico">${ICON.spin}</span><span class="lab">${label}</span><span class="t num mono"></span>${ICON.chev}</button><div class="step-b"></div>`;
+  $(".step-h", s).addEventListener("click", () => { s.classList.toggle("collapsed"); $(".step-h", s).setAttribute("aria-expanded", !s.classList.contains("collapsed")); });
+  tb.steps.appendChild(s); s._t0 = performance.now(); tb.cur = s; scrollFeed();
+  return s;
+}
+function closeStep(tb, collapse) {
+  const s = tb.cur; if (!s) return;
+  $(".ico", s).innerHTML = s._failed ? ICON.done : ICON.done;
+  $(".t", s).textContent = ((performance.now() - s._t0) / 1000).toFixed(1) + " s";
+  if (collapse && !s._keep) { s.classList.add("collapsed"); $(".step-h", s).setAttribute("aria-expanded", "false"); }
+  tb.cur = null;
+}
+const body = (tb) => $(".step-b", tb.cur);
+function addThought(tb, text) { const d = document.createElement("div"); d.className = "thought"; body(tb).appendChild(d); return streamText(d, text); }
+function addTool(tb, name, inner, cls = "tool") {
+  const d = document.createElement("div"); d.className = cls;
+  d.innerHTML = `<div class="tool-h"><code class="mono">${name}</code><span class="cnt num mono"></span></div>${inner}`;
+  body(tb).appendChild(d); scrollFeed(); return d;
+}
+
+// ================= timeline =================
+let SCRIPT = buildScript(DEFAULT_PROMPT, DEFAULT_PLAN), DUR = SCRIPT.at(-1).at;
+function buildTimeline() {
+  DUR = SCRIPT.at(-1).at;
+  document.querySelectorAll("#track .mk").forEach((m) => m.remove());
+  $("#track").insertAdjacentHTML("beforeend", SCRIPT.filter((e) => e.type === "phase").map((e) =>
+    `<span class="mk" data-ph="${e.id}" style="left:${(e.at / DUR) * 100}%">${PHASES.find((p) => p.id === e.id).label.split(" ")[0]}</span>`).join(""));
+  $("#tfill").style.width = "0%"; $("#thead").style.left = "0%";
+}
+buildTimeline();
+let runT0 = 0, running = false;
+function updateTimeline() {
+  if (!running) return;
+  const t = (performance.now() - runT0) * SPEED, p = Math.min(1, t / DUR);
+  $("#tfill").style.width = p * 100 + "%"; $("#thead").style.left = p * 100 + "%";
+  $("#timer").textContent = (t / 1000).toFixed(1) + " s";
+  if (curThink) curThink.sec.textContent = (t / 1000).toFixed(1) + " s";
+}
+const setStatus = (t, done = false) => { $("#statusText").textContent = t; $("#status").classList.toggle("done", done); };
+
+// ================= the run =================
+let curThink = null, programTable, solverLines, ruleBox, furnTool, furnished = 0;
+const placedOnce = new Set();
+// The scripted fix round needs a real first-pass mistake to show: which room is off, and how.
+let FIRST = {};
+function firstPass() {
+  const has = (id) => layout.rooms.some((r) => r.id === id);
+  if (has("kitchen") && has("dining")) { const d = roomById("dining", layout); return { dining: { ...d, x: d.x + 1.5, w: d.w - 1.5 }, bad: ["kitchen", "dining"] }; }
+  const l = roomById("living", layout); return { living: { ...l, h: l.h - 2 }, bad: ["living"] };
+}
+async function onEvent(e) {
+  const tb = curThink;
+  switch (e.type) {
+    case "phase": {
+      const ph = PHASES.find((p) => p.id === e.id);
+      openStep(tb, ph.label); setStatus(ph.label + "…");
+      document.querySelectorAll(".mk").forEach((m) => m.classList.toggle("on", m.dataset.ph === e.id));
+      if (e.id === "plan") { T(800, (p) => { fpLine.material.opacity = 0.8 * p; fpGrid.material.opacity = 0.6 * p; }); }
+      if (e.id === "plan") { programTable = addTool(tb, "plan_rooms()", `<table class="mono num"><tbody></tbody></table>`); }
+      if (e.id === "solve") { solverLines = addTool(tb, `solve_layout(footprint=${W0}×${D0})`, `<div class="lines mono num"></div>`); }
+      if (e.id === "check") {
+        tb.cur._keep = true;
+        ruleBox = addTool(tb, "check_rules()", `<div>${RULES.map((r) => `<div class="rule" data-rule="${r.id}"><span class="ico"><span class="dot"></span></span><span class="lab">${r.label}</span></div>`).join("")}</div>`);
+      }
+      if (e.id === "raise") { pointCursor(null); }
+      if (e.id === "furnish") { setCutaway(true, 900); furnTool = addTool(tb, "furnish_rooms()", `<div class="lines mono num"></div>`); furnished = 0; }
+      break;
+    }
+    case "thought": addThought(tb, e.text); break;
+    case "room": {
+      const r = e.room; const tr = document.createElement("tr"); tr.className = "row-in";
+      tr.innerHTML = `<td>${r.name}</td><td class="r">${r.target_sqft} ft²</td><td class="adj">${r.adjacent_to.length ? "↔ " + r.adjacent_to.map((a) => plan.program.rooms.find((x) => x.id === a)?.name ?? a).join(", ") : ""}</td>`;
+      $("tbody", programTable).appendChild(tr);
+      $(".cnt", programTable).textContent = $("tbody", programTable).children.length + " rooms"; scrollFeed();
+      break;
+    }
+    case "place": {
+      const r = roomById(e.roomId, layout);
+      if (e.reflow) {
+        pointCursor(r.id, "moving " + r.name);
+        if (FIRST[r.id]) { await moveVolume(r.id, r); FIRST.bad.forEach((id) => tintVolume(id, ACCENT)); }
+        const d = document.createElement("div"); d.className = "row-in"; d.innerHTML = `moved <b>${r.name}</b> → ${fmtFt(r.w)} × ${fmtFt(r.h)}`;
+        $(".lines", solverLines).appendChild(d); break;
+      }
+      // First pass is deliberately off for one room, so the checker has something real to catch.
+      const from = FIRST[r.id] ?? null;
+      placeVolume(r, { from }); placedOnce.add(r.id);
+      pointCursor(r.id, "placing " + r.name);
+      const shown = from ?? r;
+      const d = document.createElement("div"); d.className = "row-in";
+      d.innerHTML = `placed <b>${r.name}</b> ${fmtFt(shown.w)} × ${fmtFt(shown.h)}`;
+      $(".lines", solverLines).appendChild(d); $(".cnt", solverLines).textContent = `${placedOnce.size}/${layout.rooms.length}`; scrollFeed();
+      break;
+    }
+    case "check": {
+      const row = $(`.rule[data-rule="${e.rule}"]`, ruleBox);
+      row.classList.remove("pass", "fail"); row.classList.add(e.pass ? "pass" : "fail");
+      $(".ico", row).innerHTML = e.pass ? ICON.done : ICON.fail;
+      if (!e.pass) {
+        row.insertAdjacentHTML("beforeend", `<div class="msg">${esc(e.message)}</div>`);
+        FIRST.bad.forEach((id) => tintVolume(id, BAD, 0.3));
+        pointCursor(FIRST.bad.at(-1), e.rule === "kitchen_adjacent" ? "0 ft shared wall" : "too small", true);
+        setStatus("Rule failed — fixing", false);
+      } else if (e.round) {
+        $(".msg", row)?.remove(); row.insertAdjacentHTML("beforeend", `<div class="fixed">Passes after fix round 1</div>`);
+        FIRST.bad.forEach((id) => tintVolume(id, OK));
+      }
+      scrollFeed(); break;
+    }
+    case "fix": {
+      const fid = FIRST.bad.at(-1), a = FIRST[fid], z = roomById(fid, layout);
+      // dining's first pass sat 1.5 ft off the kitchen: 0 ft of shared wall, then the full kitchen depth
+      const shared = (q) => (fid === "dining" ? (q === a ? 0 : z.h) : null);
+      const line = (q, sgn) => `${sgn} ${q.name.padEnd(8)} x ${String(q.x).padEnd(5)} ${(fmtFt(q.w) + " × " + fmtFt(q.h)).padEnd(13)}${shared(q) !== null ? shared(q) + " ft shared" : sqft(q) + " ft²"}`;
+      const f = addTool(tb, `fix_round(${e.round})`, `<p>${esc(e.note)}</p><div class="diff mono num">
+<div class="m">${esc(line(a, "-"))}</div><div class="p">${esc(line(z, "+"))}</div></div>`, "fix");
+      $(".cnt", f).textContent = "round 1 of 4"; pointCursor(fid, "fixing " + z.name, true); setStatus("Fix round 1…");
+      break;
+    }
+    case "walls": raiseWalls(); break;
+    case "furnish": {
+      const r = roomById(e.roomId, layout);
+      pointCursor(r.id, "furnishing " + r.name); furnishRoom(r.id); furnished++;
+      const d = document.createElement("div"); d.className = "row-in"; d.innerHTML = `<b>${r.name}</b> · ${pieceSummary(r.id)}`;
+      $(".lines", furnTool).appendChild(d); $(".cnt", furnTool).textContent = `${furnished}/${layout.rooms.length} rooms`; scrollFeed();
+      break;
+    }
+    case "done": finish(e.stats); break;
+  }
+}
+
+async function raiseWalls() {
+  pointCursor(null);
+  setHouseVisible(true);
+  for (const m of house.walls) m.scale.y = 0.001;
+  for (const m of [...house.windows, ...house.doorFrames]) m.visible = false;
+  Object.values(house.floors).forEach((f, i) => { f.material.transparent = true; f.material.opacity = 0; T(500, (p) => (f.material.opacity = p), ease.outCubic, i * 40); });
+  // scan sweeps up, walls rise behind it
+  T(800, (p) => { fpLine.material.opacity = 0.8 * (1 - p); fpGrid.material.opacity = 0.6 * (1 - p); });
+  scan.material.opacity = 0.35;
+  T(2000, (p) => { scan.position.y = p * WALL_H; scan.material.opacity = 0.35 * (1 - p * 0.6); }, ease.inOutCubic).then(() => (scan.material.opacity = 0));
+  const sorted = [...house.walls].sort((a, b) => (a.position.x + a.position.z) - (b.position.x + b.position.z));
+  sorted.forEach((w, i) => T(950, (p) => (w.scale.y = Math.max(0.001, p)), ease.spring, 200 + i * 12));
+  for (const v of Object.values(volumes)) T(900, (p) => { v.userData.mat.opacity = 0.2 * (1 - p); v.userData.lmat.opacity = 0.9 * (1 - p); }, ease.outCubic, 900).then(() => (v.visible = false));
+  setTimeout(() => { for (const m of [...house.windows, ...house.doorFrames]) m.visible = true; }, RM ? 0 : 1700);
+}
+
+// One shared transparent canvas renders every room card in the feed; clipped to the feed's box so cards
+// scrolled under the pane header/composer disappear instead of floating over them.
+let mini = null, miniClip = "";
+function ensureMini() { if (!mini) mini = createMiniStage({ z: 6 }); return mini; }
+function updateMiniClip() {
+  if (!mini) return;
+  const r = feed.getBoundingClientRect();
+  const c = `inset(${Math.max(0, r.top)}px ${Math.max(0, innerWidth - r.right)}px ${Math.max(0, innerHeight - r.bottom)}px ${Math.max(0, r.left)}px)`;
+  if (c !== miniClip) { mini.canvas.style.clipPath = c; miniClip = c; }
+}
+// Room diorama for a card: floor, cut-down walls and furniture, with in-flight build effects stripped.
+function dio(id) {
+  const g = roomDiorama(house, furn, id, { wallHeight: 3.4 });
+  const lines = [];
+  g.traverse((o) => { o.visible = true; if (o.userData.kind === "furniture" || o.userData.kind === "item") { o.scale.set(1, 1, 1); if (o.userData.kind === "item") o.position.y = 0; } if (o.isLineSegments) lines.push(o); });
+  lines.forEach((o) => o.parent.remove(o));
+  return g;
+}
+const dims = (r) => `${fmtFt(r.w)} × ${fmtFt(r.h)}`;
+// cards that show the current state of a room (refreshed after drags); "Before" cards stay frozen
+let liveCards = [];
+function refreshCards(ids) {
+  liveCards = liveCards.filter((c) => c.el.isConnected);
+  for (const c of liveCards) if (ids.includes(c.id) && roomById(c.id, layout)) mini?.swap(c.el, dio(c.id));
+}
+function attCard(id, label, sub, cls = "") {
+  return `<figure class="att ${cls}" data-room="${id}"><div class="att-3d"></div><figcaption><b>${label}</b><span class="num">${sub}</span></figcaption></figure>`;
+}
+// hovering a card lights that room's floor in the main view
+function wireCards(el) {
+  el.querySelectorAll(".att").forEach((a) => {
+    const id = a.dataset.room;
+    a.addEventListener("pointerenter", () => house.floors[id]?.material.emissive?.set(0x24306e));
+    a.addEventListener("pointerleave", () => house.floors[id]?.material.emissive?.set(0x000000));
+  });
+}
+
+function finish(stats) {
+  running = false; closeStep(curThink, true); pointCursor(null);
+  curThink.head.textContent = `Built in ${stats.seconds} s`; curThink.sec.textContent = stats.seconds.toFixed(1) + " s";
+  $("#tfill").style.width = "100%"; $("#thead").style.left = "100%"; $("#timer").textContent = stats.seconds.toFixed(1) + " s";
+  document.querySelectorAll(".mk").forEach((m) => m.classList.add("on"));
+  setStatus("All 7 rules pass", true);
+  const m = document.createElement("div"); m.className = "agent-msg";
+  m.innerHTML = `<div class="who">${markSVG("#6c80ff", 14)}<span>build</span></div>
+    <div class="summary"><div>Your house is ready. ${esc(plan.summary.zoning)} Every room has a door or an opening, every bedroom has a window, and one fix round was needed. ${furn.items.length} pieces of furniture are placed with door swings kept clear; drag any of them to rearrange.</div>
+    <div class="stats"><div><b class="num">${stats.rooms}</b><span>rooms</span></div><div><b class="num">${stats.sqft.toLocaleString()}</b><span>sq ft</span></div><div><b class="num">${stats.rulesPassed}/7</b><span>rules pass</span></div><div><b class="num">${stats.rounds}</b><span>fix round</span></div></div>
+    <div class="atts">${cardRooms().map((id) => { const r = roomById(id, layout); return attCard(id, r.name, dims(r)); }).join("")}</div>
+    <div class="acts"><button class="ghost" data-go="walk">Walk through</button><button class="ghost" data-go="plan">See the plan</button></div></div>`;
+  feed.appendChild(m);
+  // attach after the furniture pop-in has settled so cards show finished rooms
+  setTimeout(() => {
+    const st = ensureMini();
+    m.querySelectorAll(".att").forEach((a) => { st.add($(".att-3d", a), dio(a.dataset.room), { baseYaw: 0.5 }); liveCards.push({ el: $(".att-3d", a), id: a.dataset.room }); });
+    wireCards(m); scrollFeed();
+  }, RM ? 0 : 400);
+  scrollFeed();
+  m.addEventListener("click", (e) => e.target.dataset.go && setTab(e.target.dataset.go));
+  document.querySelectorAll(".tabs button").forEach((b) => (b.disabled = false));
+  $("#editIn").disabled = false; $("#editBtn").disabled = false; $("#editIn").value = "Make the kitchen bigger";
+  controls.enabled = true; autoSpin = true; building = false; editing = false; $("#cutBtn").disabled = false;
+  builtOnce = true; $("#cutBtn").hidden = false;
+  $("#planSheet").innerHTML = planSVG(layout);
+  updateDrag();
+}
+const cardRooms = () => ["living", "kitchen", ["primary_bedroom", "sleep", "bedroom_2"].find((id) => roomById(id, layout))].filter((id) => id && roomById(id, layout));
+
+let autoSpin = false, building = false;
+const SPEED = Math.max(0.25, +new URLSearchParams(location.search).get("speed") || 1); // ?speed=4 for testing
+// Adopt a freshly generated plan: house, furniture, island, guides, script, timeline, camera frame.
+function adoptPlan(prompt) {
+  plan = prompt === DEFAULT_PROMPT ? DEFAULT_PLAN : generate(prompt);
+  layout = plan.layout;
+  for (const v of Object.values(volumes)) { root.remove(v); } for (const k in volumes) delete volumes[k];
+  placedOnce.clear(); furnished = 0;
+  makeHouse(layout); makeIsland(layout); makeGuides();
+  cut = false;
+  setHouseVisible(false);
+  for (const g of Object.values(furn.byRoom)) g.visible = false;
+  FIRST = firstPass();
+  SCRIPT = buildScript(prompt, plan); buildTimeline();
+  $(".proj").textContent = projName(prompt);
+}
+const projName = (prompt) => { const p = plan.parsed; return p.studio ? "Studio home" : `${p.beds} bed, ${p.baths} bath home`; };
+function start(prompt) {
+  const ta = $("#prompt"), from = ta.getBoundingClientRect();
+  document.body.classList.add("app");
+  // name the project from the brief: "3 bed, 2 bath home"
+  building = true; updateDrag();
+  adoptPlan(prompt);
+  const b = document.createElement("div"); b.className = "bubble"; b.textContent = prompt; feed.appendChild(b);
+  // FLIP the composer text into the message bubble
+  requestAnimationFrame(() => {
+    const to = b.getBoundingClientRect();
+    if (!RM) b.animate([{ transform: `translate(${from.left - to.left}px, ${from.top - to.top}px) scale(${Math.min(1.6, from.width / to.width)})`, opacity: 0.4, transformOrigin: "top left" }, { transform: "none", opacity: 1, transformOrigin: "top left" }], { duration: 700, easing: "cubic-bezier(.7,0,.2,1)" });
+  });
+  T(600, (p) => (edgeMat.opacity = 0.35 * (1 - p))).then(() => (silhouette.visible = false));
+  T(900, (p) => { root.rotation.y = rotFrom * (1 - p); }, ease.inOutCubic);
+  spinning = false;
+  enterWorkspace().then(() => {
+    fitFrustum(0);
+    curThink = newThinkBlock("Thinking");
+    runT0 = performance.now(); running = true;
+    playScript(SCRIPT, onEvent, { speed: SPEED });
+  });
+}
+// Landing -> workspace: the perspective camera dives through the upper cloud ring toward the build
+// view, graphite mist rolls in, and the orthographic camera takes over behind it.
+async function enterWorkspace() {
+  if (parallax) parallax.enabled = false;
+  const pr = { x: para.rotation.x, y: para.rotation.y };
+  T(900, (p) => { para.rotation.x = pr.x * (1 - p); para.rotation.y = pr.y * (1 - p); }, ease.inOutCubic);
+  const handover = () => { camera = ortho; seaHigh.setOpacity(0); seaHigh.group.visible = false; para.rotation.set(0, 0, 0); };
+  if (RM) { handover(); return; }
+  const to = ortho.position.clone().normalize().multiplyScalar(50);
+  const dive = cameraDive(landCam, { to, look: new THREE.Vector3(0, -2, 0), ms: 1500, fovPunch: 18, roll: 0.08 });
+  await new Promise((r) => setTimeout(r, 950));
+  await mist.cover(560); await dive;
+  handover();
+  mist.reveal(950);
+  await new Promise((r) => setTimeout(r, 250));
+}
+let spinning = true, rotFrom = 0;
+$("#landForm").addEventListener("submit", (e) => {
+  e.preventDefault(); const v = $("#prompt").value.trim(); if (!v) return $("#prompt").focus();
+  rotFrom = root.rotation.y % (Math.PI * 2); if (rotFrom > Math.PI) rotFrom -= Math.PI * 2;
+  $("#genBtn").disabled = true; start(v);
+});
+
+// ================= edit: any "make <room> bigger/smaller" =================
+const wait = (ms) => new Promise((r) => setTimeout(r, RM ? 0 : ms));
+function agentSay(html) {
+  const m = document.createElement("div"); m.className = "agent-msg";
+  m.innerHTML = `<div class="who">${markSVG("#6c80ff", 14)}<span>build</span></div><div>${html}</div>`;
+  feed.appendChild(m); scrollFeed(); return m;
+}
+const listNames = (a) => a.length < 2 ? a.join("") : a.slice(0, -1).join(", ") + " and " + a.at(-1);
+const dimLine = (r) => `${r.name.padEnd(16)}${(fmtFt(r.w) + " × " + fmtFt(r.h)).padEnd(13)}${String(sqft(r)).padStart(4)} ft²`;
+function setComposer(on) {
+  $("#editIn").disabled = !on; $("#editBtn").disabled = !on;
+  document.querySelectorAll('.tabs [data-tab="plan"], .tabs [data-tab="walk"]').forEach((b) => (b.disabled = !on));
+  $("#cutBtn").disabled = !on;
+  if (on) $("#editIn").focus();
+}
+
+let editing = false;
+$("#editForm").addEventListener("submit", async (e) => {
+  e.preventDefault(); const v = $("#editIn").value.trim(); if (!v) return;
+  setTab("3d"); $("#editIn").value = ""; setComposer(false); editing = true; updateDrag();
+  const b = document.createElement("div"); b.className = "bubble"; b.textContent = v; feed.appendChild(b); scrollFeed();
+  let res = null;
+  try { res = editLayout(layout, v); } catch { res = null; }
+  if (res && !res.changed.every((id) => roomById(id, res.layout) && roomById(id, layout))) res = null;
+  // not an edit but reads like a new brief ("4 bed with a mudroom, 2,400 sq ft"): plan a whole new house
+  if (!res && looksLikeBrief(v)) { await regenerate(v); return; }
+  if (!res) {
+    await wait(500);
+    agentSay(`I couldn't tell which room to change, or how. Name one room and say bigger or smaller, for example <button class="ghost ex">Make the kitchen bigger</button> <button class="ghost ex">Make bedroom 2 smaller</button> <button class="ghost ex">Make the office bigger</button>`)
+      .addEventListener("click", (ev) => { if (ev.target.matches(".ex")) { $("#editIn").value = ev.target.textContent; $("#editForm").requestSubmit(); } });
+    setComposer(true); editing = false; updateDrag(); return;
+  }
+  KEEP_ARRANGEMENT = furn?.getArrangement?.() ?? null; // moved furniture survives the edit
+
+  const old = layout, next = res.layout, changed = res.changed;
+  const names = changed.map((id) => roomById(id, old).name);
+  const tb = curThink = newThinkBlock("Editing");
+  const t0 = performance.now(); running = false;
+  const tick = setInterval(() => (tb.sec.textContent = ((performance.now() - t0) / 1000).toFixed(1) + " s"), 100);
+  setStatus("Planning edit…");
+  openStep(tb, "Planning the edit");
+  await addThought(tb, `Only ${listNames(names)} change. The other ${old.rooms.length - changed.length} rooms stay exactly where they are.`);
+  addTool(tb, "edit_program()", `<div class="diff mono num">${changed.map((id) => {
+    const a = roomById(id, old), z = roomById(id, next);
+    if (a.w === z.w && a.h === z.h) return `<div class="n">  ${esc(a.name.padEnd(16))}same size, moves ${Math.abs(z.x - a.x)} ft ${z.x > a.x ? "east" : "west"}</div>`;
+    return `<div class="m">- ${esc(dimLine(a))}</div><div class="p">+ ${esc(dimLine(z))}</div>`;
+  }).join("")}</div>`);
+  await wait(900);
+
+  openStep(tb, "Moving walls"); setStatus("Moving walls…");
+  pointCursor(changed[0], "resizing " + names[0]);
+  const rects = changed.flatMap((id) => [roomById(id, old), roomById(id, next)]);
+  const bb = { x0: Math.min(...rects.map((r) => r.x)), x1: Math.max(...rects.map((r) => r.x + r.w)), y0: Math.min(...rects.map((r) => r.y)), y1: Math.max(...rects.map((r) => r.y + r.h)) };
+  const hits = (s) => Math.max(s.x1, s.x2) >= bb.x0 - 0.01 && Math.min(s.x1, s.x2) <= bb.x1 + 0.01 && Math.max(s.y1, s.y2) >= bb.y0 - 0.01 && Math.min(s.y1, s.y2) <= bb.y1 + 0.01;
+  house.walls.filter((w) => hits(w.userData.seg)).forEach((w) => T(400, (p) => (w.scale.y = Math.max(0.001, 1 - p))));
+  for (const m of house.windows) if (changed.includes(m.userData.roomId)) m.visible = false;
+  for (const m of house.doorFrames) if (m.userData.door.between.some((id) => changed.includes(id))) m.visible = false;
+  for (const id of changed) for (const m of furn.byRoom[id]?.children ?? []) T(350, (p) => (m.scale.y = Math.max(0.001, 1 - p)));
+  for (const id of changed) { const vv = volumes[id]; if (!vv) continue; vv.visible = true; vv.userData.mat.opacity = 0.18; vv.userData.lmat.opacity = 0.9; vv.userData.mat.color.copy(ACCENT); vv.userData.lmat.color.copy(ACCENT); }
+  await Promise.all(changed.map((id) => volumes[id] ? moveVolume(id, roomById(id, next)) : null));
+  const focus = changed[0];
+  // before the rebuild: two copies of the old room (one stays "Before", one swaps to "After" in the reply)
+  for (const m of house.walls) m.scale.y = wallTarget(m);
+  for (const id of changed) for (const m of furn.byRoom[id]?.children ?? []) m.scale.y = 1;
+  const beforeA = dio(focus), beforeB = dio(focus);
+  layout = next; makeHouse(layout); setCutaway(cut, 0);
+  for (const [id, g] of Object.entries(furn.byRoom)) g.visible = !changed.includes(id);
+  house.walls.filter((w) => hits(w.userData.seg)).forEach((w, i) => { w.scale.y = 0.001; const to = wallTarget(w); T(800, (p) => (w.scale.y = Math.max(0.001, p * to)), ease.spring, i * 40); });
+  for (const id of changed) { const vv = volumes[id]; if (vv) T(600, (p) => { vv.userData.mat.opacity = 0.18 * (1 - p); vv.userData.lmat.opacity = 0.9 * (1 - p); }, ease.outCubic, 500).then(() => (vv.visible = false)); }
+  await wait(800);
+
+  openStep(tb, "Refurnishing");
+  const ft = addTool(tb, "furnish_rooms()", `<div class="lines mono num"></div>`);
+  for (const id of changed) {
+    const r = roomById(id, layout);
+    pointCursor(id, "furnishing " + r.name); furnishRoom(id);
+    const d = document.createElement("div"); d.className = "row-in"; d.innerHTML = `<b>${r.name}</b> · ${pieceSummary(id)}`; $(".lines", ft).appendChild(d); scrollFeed();
+    await wait(420);
+  }
+  openStep(tb, "Checking layout rules"); setStatus("Checking rules…");
+  pointCursor(null);
+  addTool(tb, "check_rules()", `<div>${RULES.map((r) => `<div class="rule pass"><span class="ico">${ICON.done}</span><span class="lab">${r.label}</span></div>`).join("")}</div>`);
+  await wait(800); closeStep(tb, true); clearInterval(tick);
+  tb.head.textContent = `Edited in ${((performance.now() - t0) / 1000).toFixed(1)} s`;
+  const ra = roomById(focus, old), rz = roomById(focus, layout);
+  liveCards = liveCards.filter((c) => !changed.includes(c.id));
+  const reply = agentSay(`${esc(res.note)} All 7 rules still pass.
+    <div class="atts two">${attCard(focus, "Before", dims(ra))}${attCard(focus, "After", dims(rz), "after")}</div>`);
+  const [ca, cz] = reply.querySelectorAll(".att-3d");
+  const st = ensureMini();
+  st.add(ca, beforeA, { baseYaw: 0.5 }); st.add(cz, beforeB, { baseYaw: 0.5 });
+  wireCards(reply); scrollFeed();
+  setTimeout(() => st.swap(cz, dio(focus)), RM ? 0 : 750);
+  liveCards.push({ el: cz, id: focus });
+  setStatus("All 7 rules pass", true);
+  $("#planSheet").innerHTML = planSVG(layout);
+  setComposer(true); editing = false; updateDrag();
+});
+const looksLikeBrief = (v) => /\b(\d+|one|two|three|four|five)\s*[- ]?(bed|br|bedroom)|studio|sq ?ft|square feet|\b(home|house|cottage|cabin|bungalow|ranch)\b/i.test(v) && !/\b(bigger|smaller|larger|wider|narrower|move|swap)\b/i.test(v);
+// Follow-up brief: replan a whole new house in place, with the same thinking stream as the first run.
+async function regenerate(prompt) {
+  building = true; updateDrag(); autoSpin = false; controls.enabled = false;
+  setStatus("Planning a new house…");
+  // old house sinks, then the new plan takes over
+  const old = [...house.walls, ...Object.values(furn.byRoom)];
+  await T(500, (p) => old.forEach((o) => (o.scale.y = Math.max(0.001, 1 - p))), ease.settle);
+  T(700, (p) => (root.rotation.y *= 1 - p), ease.settle);
+  adoptPlan(prompt); liveCards = [];
+  await fitFrustum(700);
+  agentSay(`That reads like a new brief, so I'm planning a fresh house rather than editing this one.`);
+  curThink = newThinkBlock("Thinking");
+  runT0 = performance.now(); running = true;
+  playScript(SCRIPT, onEvent, { speed: SPEED });
+}
+$("#editIn").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#editForm").requestSubmit(); } });
+
+// ================= tabs / walk =================
+let walkCutWas = true, builtOnce = false;
+let walker = null, walkerLayout = null, walkLights = null, tab = "3d";
+function setWalkLighting(on) {
+  house.ceilings.visible = on; house.ceilings.children.forEach((c) => (c.castShadow = on));
+  if (on && !walkLights) {
+    walkLights = new THREE.Group();
+    for (const r of layout.rooms) {
+      const L = new THREE.PointLight(0xffe6c8, r.type === "hall" ? 10 : 18, Math.max(r.w, r.h) * 1.6, 1.3);
+      const c = toW(r.x + r.w / 2, r.y + r.h / 2); L.position.set(c.x, WALL_H - 1.2, c.z); walkLights.add(L);
+    }
+    root.add(walkLights);
+  }
+  if (!on && walkLights) { root.remove(walkLights); walkLights.children.forEach((l) => l.dispose()); walkLights = null; }
+  sun.intensity = on ? 0.5 : 1.6; hemi.intensity = on ? 0.55 : 1.1;
+  for (const m of house.doorFrames) m.material.color.set(on ? 0x9aa2bb : 0x6c80ff);
+  stage.classList.toggle("walking", on);
+}
+function setTab(t) {
+  tab = t;
+  document.querySelectorAll(".tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.tab === t));
+  $("#planView").classList.toggle("show", t === "plan");
+  renderer.domElement.style.visibility = t === "plan" ? "hidden" : "visible";
+  $("#walkHud").classList.toggle("show", t === "walk");
+  $("#cutBtn").hidden = !builtOnce || t !== "3d";
+  $("#timeline").style.visibility = t === "walk" ? "hidden" : "visible";
+  if (t === "walk") {
+    if (walker && (walkerLayout !== layout || walkerDirty)) { walker.dispose(); walker = null; }
+    if (!walker) { furn.recomputeBoxes(); walker = createWalker(persp, renderer.domElement, layout, { extraBoxes: furn.boxes }); walkerLayout = layout; walkerDirty = false; }
+    camera = persp; controls.enabled = false; autoSpin = false; root.rotation.y = 0;
+    walkCutWas = cut; setCutaway(false, 0);
+    for (const g of Object.values(furn.byRoom)) { g.visible = true; g.children.forEach((m) => { m.scale.set(1, 1, 1); m.position.y = 0; }); }
+    setWalkLighting(true);
+    $("#mini").innerHTML = planSVG(layout, { labels: false, pad: 1 });
+    const svg = $("#mini svg"); svg.insertAdjacentHTML("beforeend", `<g id="me"><path d="M0 -2.2 L1.4 1.4 L0 0.6 L-1.4 1.4Z" fill="#6c80ff" stroke="#fff" stroke-width=".25"/></g>`);
+    walker.enter(); renderer.domElement.focus?.();
+  } else {
+    if (walker?.active) { setWalkLighting(false); setCutaway(walkCutWas, 0); }
+    walker?.exit(); camera = ortho; controls.enabled = !building && !editing;
+  }
+  updateDrag();
+}
+// walker was built for LAYOUT; rebuild if layout changed
+$("#cutBtn").addEventListener("click", () => setCutaway(!cut));
+document.querySelector(".tabs").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !b.disabled) setTab(b.dataset.tab); });
+addEventListener("keydown", (e) => { if (e.key === "Escape" && tab === "walk") setTab("3d"); });
+
+// ================= drag & drop furniture =================
+const roomName = (id) => roomById(id, layout)?.name ?? id;
+function doorNote(item, roomId) {
+  const r = roomById(roomId, layout); if (!r) return "";
+  const p = item.getWorldPosition(new THREE.Vector3()); root.worldToLocal(p);
+  const px = p.x + W0 / 2, py = p.z + D0 / 2;
+  const near = layout.doors.filter((d) => d.between.includes(roomId)).some((d) => Math.hypot(d.x - px, d.y - py) < 3.5);
+  return near ? ` It's close to a door in the ${r.name}, so leave a little swing room.` : " Still clear of the doors.";
+}
+drag = createFurnitureDrag({
+  camera: ortho, dom: renderer.domElement, furniture: furn, layout, controls, ringColor: 0x6c80ff,
+  onPick: () => { autoSpin = false; },
+  onMove: ({ roomId }) => setStatus(`Moving into ${roomName(roomId)}…`),
+  onDrop: ({ item, from, to, cancelled, name }) => {
+    setStatus("All 7 rules pass", true);
+    if (cancelled) return;
+    walkerDirty = true;
+    const what = (name ?? "piece").replace(/^(\w)/, (c) => c.toLowerCase());
+    agentSay(from === to ? `Nudged the ${esc(what)} within the ${esc(roomName(to))}.${doorNote(item, to)}`
+      : `Moved the ${esc(what)} from ${esc(roomName(from))} to ${esc(roomName(to))}.${doorNote(item, to)}`);
+    setTimeout(() => refreshCards([from, to]), RM ? 0 : 750);
+  },
+});
+drag.enabled = false;
+if (new URLSearchParams(location.search).has("debug")) window.__ac = { THREE, get furn() { return furn; }, get layout() { return layout; }, ortho, renderer, root, get drag() { return drag; }, get camera() { return camera; } };
+function updateDrag() {
+  const on = builtOnce && !building && !editing && tab === "3d";
+  if (drag) drag.enabled = on;
+  $("#dragHint").hidden = !on;
+}
+
+// ================= loop =================
+let last = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  tickTweens(now);
+  parallax?.update(dt);
+  island.update(dt); seaLow.update(dt); seaGlow.update(dt); if (seaHigh.group.visible) seaHigh.update(dt);
+  updateMiniClip();
+  if (spinning && !RM) root.rotation.y += dt * 0.12;
+  if (autoSpin && tab === "3d" && !RM && !drag?.dragging) root.rotation.y += dt * 0.03;
+  drag?.update(dt);
+  if (camera === ortho) controls.update();
+  if (walker?.active) {
+    walker.update(dt);
+    const pp = walker.planPos(), me = $("#me");
+    if (me) me.setAttribute("transform", `translate(${pp.x} ${pp.y}) rotate(${-pp.heading * 180 / Math.PI})`);
+    const r = walker.roomAt(); $("#walkRoom").textContent = r ? r.name : "Outside";
+    document.querySelectorAll("#mini .p-room").forEach((el) => el.classList.toggle("here", el.dataset.id === r?.id));
+  }
+  updateTimeline(); updateCursor(); glideCursor(dt);
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+// Site view: "On site" button next to Walk through (Google 3D tiles; see core/site.js).
+addSiteButton(document.querySelector('.tabs [data-tab="walk"]'), () => layout);
+addPhotorealButton(document.querySelector('.tabs [data-tab="walk"]'), () => ({ layout: layout, furniture: furn })); // Blender Cycles 360° tour, renders automatically
+</script>
+</body>
+</html>

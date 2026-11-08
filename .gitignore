@@ -18,5 +18,12 @@ backend/eval/results.json
 .idea/
 .DS_Store
 
+# design mockups: local Google Maps key
+design-mockups/core/site-config.local.js
+design-mockups/.env.local
+
+# photoreal tour renders (regenerated on demand)
+design-mockups/renders/
+render/out/
 # agent board state (per clone)
 .board/

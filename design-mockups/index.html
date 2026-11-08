@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>build — design directions</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  :root { --blue:#2B45F5; --ink:#151515; --paper:#F6F5F1; --line:#dddad2; --muted:#6b6862; }
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: "Inter Tight", system-ui, sans-serif; background: var(--paper); color: var(--ink); padding: 48px clamp(16px, 5vw, 72px) 80px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; flex-wrap: wrap; margin-bottom: 48px; }
+  h1 { font-size: clamp(28px, 4vw, 44px); font-weight: 600; letter-spacing: -0.03em; max-width: 22ch; line-height: 1.05; margin-top: 28px; }
+  header p { color: var(--muted); max-width: 46ch; line-height: 1.5; font-size: 15px; }
+  ol { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 20px; }
+  a.card { display: block; text-decoration: none; color: inherit; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: #fff; transition: border-color .2s, transform .2s; }
+  a.card:hover, a.card:focus-visible { border-color: var(--blue); transform: translateY(-2px); outline: none; }
+  .thumb { aspect-ratio: 16/10; display: grid; place-items: center; padding: 20px; }
+  .thumb svg { width: 100%; height: 100%; }
+  .meta { padding: 16px 18px 20px; border-top: 1px solid var(--line); }
+  .meta b { display: block; font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .meta span { color: var(--muted); font-size: 14px; line-height: 1.45; display: block; margin-top: 6px; }
+  .n { font-weight: 500; color: var(--blue); margin-right: 6px; }
+  .p-room { fill: none; } .p-wall { stroke-width: .5; stroke-linecap: square; } .p-win { stroke-width: .9; }
+  .p-label, .p-door { display: none; }
+</style>
+</head>
+<body>
+<header>
+  <div><span id="logo"></span><h1>Five directions for the prompt-to-house experience</h1></div>
+  <p>Same house, same build story, five looks. Every mockup runs on mock data (the cached 3-bed plan and a scripted planner → solver → checker run with one fix round). Type a prompt, watch it think and build, then walk through it.</p>
+</header>
+<ol id="list"></ol>
+<script type="module">
+  import { lockupHTML, planSVG } from "./core/core.js";
+  document.getElementById("logo").innerHTML = lockupHTML({ size: 34 });
+  const D = [
+    ["01-drafting-table", "Drafting table", "Blueprint sheet. The plan is pencilled in line by line, then lifts off the paper into a wireframe house.", "#13226b", "#cfe0ff", "#7fa2ff"],
+    ["02-site-model", "Site model", "Architect's foam-board model on a light table. Pieces are cut and placed while the camera circles.", "#ecebe6", "#151515", "#2B45F5"],
+    ["03-agent-canvas", "Agent canvas", "Chat on the left, live canvas on the right. Every thought and rule check streams next to the house it changes.", "#16171b", "#e9e9ee", "#6c80ff"],
+    ["04-night-walk", "Night walk", "Full-bleed 3D. A swarm of points condenses into the house, lights come on room by room.", "#06081a", "#ffd9a0", "#6f86ff"],
+    ["05-exploded-axon", "Exploded axon", "Bold Swiss layout built from the logo's geometry. The house assembles as an exploded axonometric stack.", "#2B45F5", "#ffffff", "#ffffff"],
+  ];
+  document.getElementById("list").innerHTML = D.map(([href, name, desc, bg, wall, win], i) => `
+    <li><a class="card" href="./${href}/index.html">
+      <div class="thumb" style="background:${bg};--w:${wall};--g:${win}">${planSVG(undefined, { labels: false, pad: 3 })}</div>
+      <div class="meta"><b><span class="n">${i + 1}</span>${name}</b><span>${desc}</span></div></a></li>`).join("");
+  for (const t of document.querySelectorAll(".thumb")) {
+    t.querySelectorAll(".p-wall").forEach((l) => l.setAttribute("stroke", getComputedStyle(t).getPropertyValue("--w")));
+    t.querySelectorAll(".p-win").forEach((l) => l.setAttribute("stroke", getComputedStyle(t).getPropertyValue("--g")));
+  }
+</script>
+</body>
+</html>

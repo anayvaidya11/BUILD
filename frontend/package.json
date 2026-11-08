@@ -12,6 +12,7 @@
   "dependencies": {
     "@react-three/drei": "^10.7.9",
     "@react-three/fiber": "^9.8.2",
+    "3d-tiles-renderer": "^0.5.4",
     "next": "16.4.5",
     "react": "19.3.0",
     "react-dom": "19.3.0",
