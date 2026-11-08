@@ -30,7 +30,20 @@ def _cached() -> GenerateResponse:
     files = sorted(CACHE_DIR.glob("*.json"))
     if not files:
         raise HTTPException(503, "API failed and no cached generations in backend/cached/")
-    resp = GenerateResponse.model_validate(json.loads(random.choice(files).read_text()))
+    valid = []
+    for file in files:
+        try:
+            resp = GenerateResponse.model_validate(json.loads(file.read_text()))
+            resp.layout.checks = checker.check(resp.layout)
+            if all(c.pass_ for c in resp.layout.checks):
+                valid.append(resp)
+            else:
+                logging.warning("ignoring invalid cached layout: %s", file.name)
+        except (OSError, ValueError) as exc:
+            logging.warning("ignoring unreadable cached layout %s: %s", file.name, exc)
+    if not valid:
+        raise HTTPException(503, "No cached generations pass the current layout rules")
+    resp = random.choice(valid)
     resp.cached = True
     return resp
 
