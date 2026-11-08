@@ -78,7 +78,7 @@ const CSS = `
 .site-ov input[type=color]{width:100%;height:28px;border:1px solid #d9d6cf;border-radius:6px;padding:1px;background:#fff;cursor:pointer}
 .site-ov .ok{font-size:12px;color:#1f7a4d}
 .site-ov .shots{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);display:flex;gap:10px;align-items:flex-end;background:rgba(20,20,22,.55);backdrop-filter:blur(8px);padding:8px;border-radius:14px}
-.site-ov .shot{width:176px;height:110px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
+.site-ov .shot{width:118px;height:74px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
 .site-ov .shot img{width:100%;height:100%;object-fit:cover;display:block}
 .site-ov .shot span{position:absolute;inset:0;display:grid;place-items:center;color:#ddd;font-size:11px;text-align:center;padding:6px}
 .site-ov .shot.busy span::after{content:"";width:16px;height:16px;margin-top:22px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:sitespin 0.8s linear infinite;position:absolute}
@@ -140,7 +140,7 @@ export async function openSiteView(layout) {
     <div class="hint" hidden>Drag to orbit · scroll to zoom · double-click the map to move the house</div>
     <div class="attr"></div>
     <div class="shots" hidden>
-      ${[0, 1, 2].map((i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}
+      ${[0, 1, 2, 3, 4, 5].map((i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}
       <div class="side"><b>Photoreal shots</b><span class="sstat"></span><label class="skinrow"><input type="checkbox" class="skin" checked disabled /> Photo skin on 3D house</label><button type="button" class="fullview pri" disabled>Full screen</button><button type="button" class="rerender">Re-render</button></div>
     </div>`;
   document.body.appendChild(ov);
@@ -256,10 +256,15 @@ export async function openSiteView(layout) {
   // derivative of Maps content, which the Maps Platform terms don't allow.
   // off = degrees from the front-door direction; elev = camera pitch above horizontal;
   // fill = fraction of the frame width the house should span.
+  // tier "main" = Nano Banana 2.1 for the hero views; "lite" = Nano Banana 2 Lite (cheapest) for the
+  // extra coverage views, which also get the front hero photo as a reference so materials match.
   const SHOTS = [
-    { off: 35, elev: 4, fill: 0.72, desc: "Eye-level photo from the front yard, three-quarter view of the front" },
-    { off: -55, elev: 3, fill: 0.62, desc: "Eye-level photo from across the street, showing the front and side" },
-    { off: 150, elev: 32, fill: 0.62, desc: "Elevated drone photo from above the back corner of the lot" },
+    { off: 35, elev: 4, fill: 0.72, tier: "main", desc: "Eye-level photo from the front yard, three-quarter view of the front" },
+    { off: -55, elev: 3, fill: 0.62, tier: "main", desc: "Eye-level photo from across the street, showing the front and side" },
+    { off: 150, elev: 32, fill: 0.62, tier: "main", desc: "Elevated drone photo from above the back corner of the lot" },
+    { off: 100, elev: 4, fill: 0.62, tier: "lite", desc: "Eye-level photo of the side of the house from the side yard" },
+    { off: -115, elev: 4, fill: 0.62, tier: "lite", desc: "Eye-level photo of the other side and back corner of the house" },
+    { off: 185, elev: 6, fill: 0.66, tier: "lite", desc: "Eye-level photo of the back of the house from the back yard" },
   ];
   let shotToken = 0, shotTimer = 0, renderReady = null;
   const shotEls = [...ov.querySelectorAll(".shot")];
@@ -325,7 +330,12 @@ export async function openSiteView(layout) {
     const images = captureAngles();
     $(".sstat").textContent = "Rendering…";
     let done = 0;
+    let resolveHero; const hero = new Promise((r) => { resolveHero = r; });
+    images.forEach((_, i) => setShot(i, { busy: true, text: SHOTS[i].tier === "lite" ? "Queued" : "Rendering" }));
     await Promise.all(images.map(async (image, i) => {
+      // Extra views wait for the front hero photo and copy its materials, so the views agree.
+      const reference = SHOTS[i].tier === "lite" ? await hero : null;
+      if (token !== shotToken) return;
       setShot(i, { busy: true, text: "Rendering" });
       const prompt = `Turn this plain 3D model render into a photorealistic architectural exterior photograph. ` +
         `Keep the house EXACTLY as modeled: same single-story footprint, roof shape and pitch, wall, trim and roof colors, ` +
@@ -335,16 +345,20 @@ export async function openSiteView(layout) {
         `Keep the whole house fully visible and unobstructed: no trees, branches, shrubs, cars or objects in front of or overhanging any part of it; keep landscaping beside and behind it, and low plantings below the windows only. ` +
         `Replace the plain gray backdrop and ground with a realistic setting: a ${style} home on a residential lot${where ? ` in ${where}` : ""}, ` +
         `with mature trees and shrubs typical of the area, a green lawn, a front walkway, and neighboring houses softly out of focus. ` +
-        `${SHOTS[i].desc}. Soft late-afternoon sunlight, natural shadows, 35mm lens, high-end real estate photography. No text, watermarks or people.`;
+        `${SHOTS[i].desc}. Soft late-afternoon sunlight, natural shadows, 35mm lens, high-end real estate photography. No text, watermarks or people.` +
+        (reference ? ` The second image is a photo of this same house from the front: match its siding, trim, roof material and color, windows, landscaping, lighting and season exactly, as if taken on the same afternoon.` : "");
       try {
-        const r = await fetch("/api/render", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ image, prompt }) });
+        const r = await fetch("/api/render", { method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ image, prompt, tier: SHOTS[i].tier, ...(reference ? { reference } : {}) }) });
         const data = await r.json();
         if (token !== shotToken) return;
         if (!r.ok) throw new Error(data.error || r.statusText);
+        if (i === 0) resolveHero(data.image);
         setShot(i, { url: data.image });
         await skin.setImage(i, data.image);
         if (token === shotToken) { $(".skin").disabled = false; if ($(".skin").checked) skin.enable(true); }
       } catch (err) {
+        if (i === 0) resolveHero(null); // extra views still render, just without the reference
         if (token === shotToken) setShot(i, { text: String(err.message || err).slice(0, 90) });
       } finally {
         if (token === shotToken) $(".sstat").textContent = ++done === images.length ? "Done · click to enlarge" : `Rendering… ${done}/${images.length}`;

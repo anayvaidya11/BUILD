@@ -26,6 +26,9 @@ function loadEnvFile() {
 loadEnvFile();
 const KEY = process.env.GEMINI_API_KEY || "";
 const MODEL = process.env.GEMINI_IMAGE_MODEL || "gemini-nano-banana-2.1";
+// Cheaper/faster model for the extra coverage views (sides, back).
+const LITE_MODEL = process.env.GEMINI_IMAGE_MODEL_LITE || "gemini-3.1-flash-lite-image";
+const MODELS = { main: MODEL, lite: LITE_MODEL };
 
 const TYPES = {
   ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".mjs": "text/javascript; charset=utf-8",
@@ -42,14 +45,22 @@ async function readBody(req, limit = 12 * 1024 * 1024) {
 
 async function render(req, res) {
   if (!KEY) return send(res, 503, { error: "No GEMINI_API_KEY. Add it to design-mockups/.env.local and restart serve.mjs." });
-  const { image, prompt } = await readBody(req);
-  const m = typeof image === "string" && image.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
-  if (!m || typeof prompt !== "string" || prompt.length > 4000) return send(res, 400, { error: "Expected { image: data URL, prompt }" });
-  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`, {
+  const { image, prompt, tier = "main", reference } = await readBody(req);
+  const dataUrl = (u) => typeof u === "string" && u.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/);
+  const m = dataUrl(image), ref = reference ? dataUrl(reference) : null;
+  if (!m || typeof prompt !== "string" || prompt.length > 4000 || !MODELS[tier] || (reference && !ref)) {
+    return send(res, 400, { error: "Expected { image: data URL, prompt, tier?: 'main'|'lite', reference?: data URL }" });
+  }
+  const model = MODELS[tier];
+  // Optional reference photo (an already-rendered view) keeps materials consistent across views.
+  const reqParts = [{ inline_data: { mime_type: m[1], data: m[2] } }];
+  if (ref) reqParts.push({ inline_data: { mime_type: ref[1], data: ref[2] } });
+  reqParts.push({ text: prompt });
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
     method: "POST",
     headers: { "x-goog-api-key": KEY, "Content-Type": "application/json" },
     body: JSON.stringify({
-      contents: [{ parts: [{ inline_data: { mime_type: m[1], data: m[2] } }, { text: prompt }] }],
+      contents: [{ parts: reqParts }],
       generationConfig: { responseModalities: ["TEXT", "IMAGE"] },
     }),
   });
@@ -66,7 +77,7 @@ async function render(req, res) {
     const why = data.candidates?.[0]?.finishReason || parts.map((p) => p.text).filter(Boolean).join(" ") || "no image returned";
     return send(res, 502, { error: `Gemini: ${why}` });
   }
-  send(res, 200, { image: `data:${img.mime_type || img.mimeType};base64,${img.data}`, model: MODEL });
+  send(res, 200, { image: `data:${img.mime_type || img.mimeType};base64,${img.data}`, model });
 }
 
 function send(res, code, obj) {
@@ -78,7 +89,7 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname === "/api/render" && req.method === "POST") return await render(req, res);
-    if (url.pathname === "/api/render/status") return send(res, 200, { ready: Boolean(KEY), model: MODEL });
+    if (url.pathname === "/api/render/status") return send(res, 200, { ready: Boolean(KEY), model: MODEL, lite: LITE_MODEL });
     let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
     if (path.endsWith("/")) path += "index.html";
     const file = join(ROOT, path);
