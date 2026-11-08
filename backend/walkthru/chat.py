@@ -123,7 +123,7 @@ def _run_edit(req: ChatRequest, instruction: str, lead: str, options: list[str] 
             action="answer",
             reply=(
                 f"I couldn't make that change ({instruction.rstrip('.')}) without breaking the plan's rules. "
-                "Try a smaller change, or take the space from a specific room, e.g. the living room."
+                "Try a smaller change, or describe the change in square feet."
             ),
             options=_suggestions(req.layout),
         )
