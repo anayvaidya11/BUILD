@@ -30,3 +30,6 @@ render/out/
 
 # photoreal tour renders + debug payloads (regenerated on demand)
 render/out/
+# Blender scene dump written by walkthrough/render_modal.py (hundreds of MB)
+walkthrough/house.blend
+walkthrough/__pycache__/

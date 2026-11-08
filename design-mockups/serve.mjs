@@ -80,6 +80,63 @@ async function render(req, res) {
   send(res, 200, { image: `data:${img.mime_type || img.mimeType};base64,${img.data}`, model });
 }
 
+// OpenStreetMap buildings + streets around a point, for orienting the house like its neighbors.
+// Proxied (instead of called from the page) because the browser request queues behind hundreds
+// of 3D-tile downloads; Node gets it in ~2 s. Cached per rounded location; two public mirrors.
+const OSM_MIRRORS = ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"];
+const osmCache = new Map();
+async function osm(req, res, url) {
+  const lat = Number(url.searchParams.get("lat")), lon = Number(url.searchParams.get("lon"));
+  if (!Number.isFinite(lat) || !Number.isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) return send(res, 400, { error: "lat/lon required" });
+  const key = `${lat.toFixed(4)},${lon.toFixed(4)}`;
+  if (osmCache.has(key)) return send(res, 200, osmCache.get(key));
+  const q = `[out:json][timeout:20];(way(around:150,${lat},${lon})["building"];way(around:120,${lat},${lon})["highway"]["highway"!~"footway|path|cycleway|steps|pedestrian|track|service|corridor|bridleway"];);out geom;`;
+  // Race the Overpass mirrors (full neighborhood) against a quick Nominatim fallback (just the
+  // lot's own building + the nearest street); take Overpass if it answers within ~5 s.
+  const UA = { "User-Agent": "Walkthru-hackathon-demo/0.1" };
+  const fallback = nominatimFallback(lat, lon, UA).catch((e) => ({ elements: [], source: "none", error: e.message })); // in parallel
+  const overpass = Promise.any(OSM_MIRRORS.map(async (m) => {
+    const r = await fetch(m, { method: "POST", body: new URLSearchParams({ data: q }), headers: UA, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const d = await r.json();
+    if (!d.elements?.length) throw new Error("empty");
+    return { ...d, source: "overpass" };
+  }));
+  try {
+    const data = await overpass;
+    osmCache.set(key, data);
+    return send(res, 200, data);
+  } catch { /* fall through */ }
+  const data = await fallback;
+  if (!data.elements.length) return send(res, 502, { error: `OSM lookups failed${data.error ? `: ${data.error}` : ""}` });
+  osmCache.set(key, data);
+  send(res, 200, data);
+}
+
+/** Nominatim reverse geocoding with geometry: the building at the point and the nearest road,
+ *  returned in Overpass's element shape so the client parses one format. */
+async function nominatimFallback(lat, lon, headers) {
+  const rev = async (zoom) => {
+    const u = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&lat=${lat}&lon=${lon}&zoom=${zoom}&polygon_geojson=1`;
+    const r = await fetch(u, { headers, signal: AbortSignal.timeout(8000) });
+    return r.ok ? r.json() : null;
+  };
+  const toPts = (coords) => coords.map(([x, y]) => ({ lat: y, lon: x }));
+  const elements = [];
+  const [bld, road] = [await rev(18), await rev(16)]; // sequential: Nominatim asks for <= 1 req/s
+  const g = bld?.geojson;
+  if (g && (bld.category === "building" || bld.addresstype === "building" || g.type === "Polygon")) {
+    const ring = g.type === "Polygon" ? g.coordinates[0] : g.type === "MultiPolygon" ? g.coordinates[0][0] : null;
+    if (ring) elements.push({ type: "way", tags: { building: "yes" }, geometry: toPts(ring) });
+  }
+  const rg = road?.geojson;
+  if (rg && road.category === "highway") {
+    const lines = rg.type === "LineString" ? [rg.coordinates] : rg.type === "MultiLineString" ? rg.coordinates : [];
+    for (const l of lines) elements.push({ type: "way", tags: { highway: road.type || "road", name: road.name }, geometry: toPts(l) });
+  }
+  return { elements, source: "nominatim" };
+}
+
 function send(res, code, obj) {
   res.writeHead(code, { "Content-Type": "application/json" });
   res.end(JSON.stringify(obj));
@@ -89,6 +146,7 @@ createServer(async (req, res) => {
   try {
     const url = new URL(req.url, `http://${req.headers.host}`);
     if (url.pathname === "/api/render" && req.method === "POST") return await render(req, res);
+    if (url.pathname === "/api/osm") return await osm(req, res, url);
     if (url.pathname === "/api/render/status") return send(res, 200, { ready: Boolean(KEY), model: MODEL, lite: LITE_MODEL });
     let path = normalize(decodeURIComponent(url.pathname)).replace(/^(\.\.[/\\])+/, "");
     if (path.endsWith("/")) path += "index.html";
