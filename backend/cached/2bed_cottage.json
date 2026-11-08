@@ -1,0 +1,386 @@
+{
+  "layout": {
+    "footprint": {
+      "width_ft": 34.0,
+      "depth_ft": 24.0
+    },
+    "entrance": {
+      "x": 9.5,
+      "y": 24.0
+    },
+    "rooms": [
+      {
+        "id": "primary_bedroom",
+        "type": "primary_bedroom",
+        "name": "Primary Bedroom",
+        "target_sqft": 150.0,
+        "adjacent_to": [],
+        "x": 19.0,
+        "y": 0.0,
+        "w": 15.0,
+        "h": 10.0
+      },
+      {
+        "id": "bedroom_2",
+        "type": "bedroom",
+        "name": "Bedroom 2",
+        "target_sqft": 100.0,
+        "adjacent_to": [],
+        "x": 24.0,
+        "y": 14.0,
+        "w": 10.0,
+        "h": 10.0
+      },
+      {
+        "id": "bathroom",
+        "type": "bathroom",
+        "name": "Bathroom",
+        "target_sqft": 50.0,
+        "adjacent_to": [],
+        "x": 19.0,
+        "y": 14.0,
+        "w": 5.0,
+        "h": 10.0
+      },
+      {
+        "id": "kitchen",
+        "type": "kitchen",
+        "name": "Kitchen",
+        "target_sqft": 100.0,
+        "adjacent_to": [
+          "dining"
+        ],
+        "x": 0.0,
+        "y": 0.0,
+        "w": 10.5,
+        "h": 9.5
+      },
+      {
+        "id": "dining",
+        "type": "dining",
+        "name": "Dining",
+        "target_sqft": 80.0,
+        "adjacent_to": [
+          "kitchen",
+          "living"
+        ],
+        "x": 10.5,
+        "y": 0.0,
+        "w": 8.5,
+        "h": 9.5
+      },
+      {
+        "id": "living",
+        "type": "living",
+        "name": "Living Room",
+        "target_sqft": 270.0,
+        "adjacent_to": [
+          "dining"
+        ],
+        "x": 0.0,
+        "y": 9.5,
+        "w": 19.0,
+        "h": 14.5
+      },
+      {
+        "id": "laundry",
+        "type": "laundry",
+        "name": "Laundry",
+        "target_sqft": 40.0,
+        "adjacent_to": [],
+        "x": 24.0,
+        "y": 10.0,
+        "w": 10.0,
+        "h": 4.0
+      },
+      {
+        "id": "hall",
+        "type": "hall",
+        "name": "Hallway",
+        "target_sqft": 20.0,
+        "adjacent_to": [],
+        "x": 19.0,
+        "y": 10.0,
+        "w": 5.0,
+        "h": 4.0
+      }
+    ],
+    "doors": [
+      {
+        "between": [
+          "exterior",
+          "living"
+        ],
+        "x": 9.5,
+        "y": 24.0,
+        "width_ft": 3.0
+      },
+      {
+        "between": [
+          "hall",
+          "living"
+        ],
+        "x": 19.0,
+        "y": 12.0,
+        "width_ft": 3.0
+      },
+      {
+        "between": [
+          "kitchen",
+          "dining"
+        ],
+        "x": 10.5,
+        "y": 4.5,
+        "width_ft": 7.0
+      },
+      {
+        "between": [
+          "kitchen",
+          "living"
+        ],
+        "x": 5.0,
+        "y": 9.5,
+        "width_ft": 8.0
+      },
+      {
+        "between": [
+          "dining",
+          "living"
+        ],
+        "x": 14.5,
+        "y": 9.5,
+        "width_ft": 6.0
+      },
+      {
+        "between": [
+          "laundry",
+          "hall"
+        ],
+        "x": 24.0,
+        "y": 12.0,
+        "width_ft": 3.0
+      },
+      {
+        "between": [
+          "primary_bedroom",
+          "hall"
+        ],
+        "x": 21.0,
+        "y": 10.0,
+        "width_ft": 3.0
+      },
+      {
+        "between": [
+          "bathroom",
+          "hall"
+        ],
+        "x": 21.0,
+        "y": 14.0,
+        "width_ft": 3.0
+      },
+      {
+        "between": [
+          "bedroom_2",
+          "laundry"
+        ],
+        "x": 26.0,
+        "y": 14.0,
+        "width_ft": 3.0
+      }
+    ],
+    "windows": [
+      {
+        "room": "kitchen",
+        "wall": "north",
+        "offset_ft": 3.0,
+        "width_ft": 4.0
+      },
+      {
+        "room": "kitchen",
+        "wall": "west",
+        "offset_ft": 3.0,
+        "width_ft": 4.0
+      },
+      {
+        "room": "dining",
+        "wall": "north",
+        "offset_ft": 2.5,
+        "width_ft": 4.0
+      },
+      {
+        "room": "living",
+        "wall": "south",
+        "offset_ft": 2.0,
+        "width_ft": 5.0
+      },
+      {
+        "room": "living",
+        "wall": "south",
+        "offset_ft": 12.0,
+        "width_ft": 5.0
+      },
+      {
+        "room": "living",
+        "wall": "west",
+        "offset_ft": 4.5,
+        "width_ft": 5.0
+      },
+      {
+        "room": "laundry",
+        "wall": "east",
+        "offset_ft": 1.0,
+        "width_ft": 2.0
+      },
+      {
+        "room": "primary_bedroom",
+        "wall": "north",
+        "offset_ft": 5.5,
+        "width_ft": 4.0
+      },
+      {
+        "room": "primary_bedroom",
+        "wall": "east",
+        "offset_ft": 3.0,
+        "width_ft": 4.0
+      },
+      {
+        "room": "bathroom",
+        "wall": "south",
+        "offset_ft": 1.0,
+        "width_ft": 2.5
+      },
+      {
+        "room": "bedroom_2",
+        "wall": "south",
+        "offset_ft": 3.0,
+        "width_ft": 4.0
+      },
+      {
+        "room": "bedroom_2",
+        "wall": "east",
+        "offset_ft": 3.0,
+        "width_ft": 4.0
+      }
+    ],
+    "checks": [
+      {
+        "rule": "contract_integrity",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "no_overlap_in_footprint",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "door_geometry",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "all_rooms_reachable",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "bedroom_exterior_wall",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "public_bathroom",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "kitchen_adjacent",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "min_hall_and_door_width",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "sizes_within_10pct",
+        "pass": true,
+        "message": ""
+      },
+      {
+        "rule": "prompt_fidelity",
+        "pass": true,
+        "message": ""
+      }
+    ],
+    "requested_sqft": 900.0
+  },
+  "program": {
+    "requested_sqft": 900.0,
+    "aspect_ratio": 1.25,
+    "rooms": [
+      {
+        "id": "primary_bedroom",
+        "type": "primary_bedroom",
+        "name": "Primary Bedroom",
+        "target_sqft": 150.0,
+        "adjacent_to": []
+      },
+      {
+        "id": "bedroom_2",
+        "type": "bedroom",
+        "name": "Bedroom 2",
+        "target_sqft": 100.0,
+        "adjacent_to": []
+      },
+      {
+        "id": "bathroom",
+        "type": "bathroom",
+        "name": "Bathroom",
+        "target_sqft": 50.0,
+        "adjacent_to": []
+      },
+      {
+        "id": "kitchen",
+        "type": "kitchen",
+        "name": "Kitchen",
+        "target_sqft": 100.0,
+        "adjacent_to": [
+          "dining"
+        ]
+      },
+      {
+        "id": "dining",
+        "type": "dining",
+        "name": "Dining",
+        "target_sqft": 80.0,
+        "adjacent_to": [
+          "kitchen",
+          "living"
+        ]
+      },
+      {
+        "id": "living",
+        "type": "living",
+        "name": "Living Room",
+        "target_sqft": 270.0,
+        "adjacent_to": [
+          "dining"
+        ]
+      },
+      {
+        "id": "laundry",
+        "type": "laundry",
+        "name": "Laundry",
+        "target_sqft": 40.0,
+        "adjacent_to": []
+      }
+    ],
+    "notes": "2 bed, 1 bath cottage"
+  },
+  "rounds": [],
+  "attempts": 1,
+  "elapsed_s": 0.0,
+  "cached": true
+}

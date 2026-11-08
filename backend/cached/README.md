@@ -5,6 +5,6 @@ curl -s localhost:8000/api/generate -H 'content-type: application/json' \
   -d '{"prompt":"3 bed, 2 bath, open kitchen, home office, about 1,800 sq ft"}' > cached/3bed_office.json
 ```
 
-`/api/generate?cached=true` serves one; the API also falls back here on errors and sets `cached: true`. Before serving a backup, the API reruns the current layout rules and ignores any invalid or unreadable file. If none pass, it returns 503.
+`/api/generate?cached=true` serves one; the API also falls back here on errors and sets `cached: true`. It prefers a backup matching explicit requests in the prompt. Before serving a backup, the API reruns the current layout rules and ignores any invalid or unreadable file. If none pass, it returns 503.
 
-Once the planner, solver, and checker are integrated and an Anthropic key is available, run `python cached/build_backups.py` from `backend/`. It creates three distinct validated responses for the demo. Check that all three files exist and pass the current checker before rehearsing.
+Run `python cached/build_backups.py --offline` from `backend/` to create three curated, distinct backups without Claude. If an Anthropic key is available, run `python cached/build_backups.py` to replace them with live generations. Both modes validate all three responses before saving any of them. Run `python cached/build_backups.py --check` after a solver or checker change and before rehearsing. The check needs no API key and fails if a file is missing, invalid, or duplicates another layout. Commit the three JSON files so the deployed service has them. Cached responses must be identified as backups in the demo.

@@ -26,7 +26,7 @@ app.add_middleware(
 )
 
 
-def _cached() -> GenerateResponse:
+def _cached(prompt: str = "") -> GenerateResponse:
     files = sorted(CACHE_DIR.glob("*.json"))
     if not files:
         raise HTTPException(503, "API failed and no cached generations in backend/cached/")
@@ -43,6 +43,10 @@ def _cached() -> GenerateResponse:
             logging.warning("ignoring unreadable cached layout %s: %s", file.name, exc)
     if not valid:
         raise HTTPException(503, "No cached generations pass the current layout rules")
+    if prompt:
+        matching = [resp for resp in valid if checker.check_prompt(prompt, resp.layout).pass_]
+        if matching:
+            valid = matching
     resp = random.choice(valid)
     resp.cached = True
     return resp
@@ -59,19 +63,23 @@ def sample():
     program = planner.sample_program()
     layout = solver.solve(program)
     layout.checks = checker.check(layout)
+    failed = checker.failures(layout.checks)
+    if failed:
+        logging.error("sample layout failed validation: %s", [(c.rule, c.message) for c in failed])
+        raise HTTPException(503, "Sample layout does not pass the current layout rules")
     return GenerateResponse(layout=layout, program=program, rounds=[], elapsed_s=0)
 
 
 @app.post("/api/generate", response_model=GenerateResponse, response_model_by_alias=True)
 def generate(req: GenerateRequest, cached: bool = False):
     if cached:
-        return _cached()
+        return _cached(req.prompt)
     try:
         return pipeline.generate(req.prompt)
     except Exception as e:
         logging.exception("generate failed")
         if os.environ.get("WALKTHRU_CACHE_FALLBACK", "1") == "1":
-            return _cached()  # response says cached=true: say so out loud in the demo
+            return _cached(req.prompt)  # response says cached=true: say so out loud in the demo
         raise HTTPException(500, str(e))
 
 
