@@ -77,7 +77,7 @@ out geom;`;
     const c = pts.reduce((s, p) => ({ e: s.e + p.e / pts.length, n: s.n + p.n / pts.length }), { e: 0, n: 0 });
     // the existing house on this lot = nearest footprint to the address point (within ~25 m)
     const dist = Math.hypot(c.e, c.n);
-    if (dist < 25 && (!lot || dist < lot.dist)) lot = { dist, pts };
+    if (dist < 25 && (!lot || dist < lot.dist)) lot = { dist, pts, axis, c };
     const wgt = Math.sqrt(area) / (1 + Math.hypot(c.e, c.n) / 40);
     ax += Math.cos(2 * axis) * wgt; ay += Math.sin(2 * axis) * wgt;
     nBuildings++;
@@ -101,9 +101,22 @@ out geom;`;
     }
   }
   const toStreet = best ? { x: -best.e / best.d, z: best.n / best.d } : null;
-  // existing house outline in three.js coords (x = west, z = north), so the lot clearing can cover it
-  const lotBuilding = lot ? lot.pts.map((p) => ({ x: -p.e, z: p.n })) : null;
-  return { longAxis, toStreet, nBuildings, lotBuilding, street: best?.name ?? null, streetDistance: best?.d ?? null };
+  // The house that is on this lot today. The new house replaces it: same spot (its centroid) and
+  // the same long axis, which beats any neighborhood average.
+  let lotBuilding = null, lotCenter = null;
+  if (lot) {
+    const ring = lot.pts.slice(0, -1).length >= 3 ? lot.pts.slice(0, -1) : lot.pts; // drop closing point
+    const c = ring.reduce((s, p) => ({ e: s.e + p.e / ring.length, n: s.n + p.n / ring.length }), { e: 0, n: 0 });
+    lotCenter = { lat: lat + c.n / M_PER_DEG_LAT, lon: lon + c.e / (111320 * Math.cos((lat * Math.PI) / 180)), x: -c.e, z: c.n };
+    // outline relative to its own center (three.js coords), for clearing the old house completely
+    lotBuilding = lot.pts.map((p) => ({ x: -(p.e - c.e), z: p.n - c.n }));
+    if (lot.axis !== null) longAxis = { x: -Math.cos(lot.axis), z: Math.sin(lot.axis) };
+  }
+  // street direction as seen from the old house's center
+  const toStreet2 = best && lotCenter
+    ? (() => { const de = best.e + lotCenter.x, dn = best.n - lotCenter.z, d = Math.hypot(de, dn) || 1; return { x: -de / d, z: dn / d }; })()
+    : toStreet;
+  return { longAxis, toStreet: toStreet2, nBuildings, lotBuilding, lotCenter, street: best?.name ?? null, streetDistance: best?.d ?? null };
 }
 
 /**

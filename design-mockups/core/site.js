@@ -78,8 +78,8 @@ const CSS = `
 .site-ov input[type=color]{width:100%;height:28px;border:1px solid #d9d6cf;border-radius:6px;padding:1px;background:#fff;cursor:pointer}
 .site-ov .ok{font-size:12px;color:#1f7a4d}
 .site-ov .shots{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);display:flex;gap:10px;align-items:flex-end;background:rgba(20,20,22,.55);backdrop-filter:blur(8px);padding:8px;border-radius:14px}
-.site-ov .thumbs{display:grid;grid-template-columns:repeat(6,72px);gap:6px}
-.site-ov .shot{width:72px;height:45px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
+.site-ov .thumbs{display:grid;grid-template-columns:repeat(8,52px);gap:5px}
+.site-ov .shot{width:52px;height:33px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
 .site-ov .shot img{width:100%;height:100%;object-fit:cover;display:block}
 .site-ov .shot span{position:absolute;inset:0;display:grid;place-items:center;color:#ddd;font-size:9px;text-align:center;padding:3px;overflow:hidden}
 .site-ov .shot.busy span::after{content:"";width:16px;height:16px;margin-top:22px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:sitespin 0.8s linear infinite;position:absolute}
@@ -164,7 +164,7 @@ export async function openSiteView(layout) {
     <div class="spinhud">Move your mouse left and right to walk around the house · 360° photoreal <button type="button" class="explore">Explore map</button></div>
     <div class="gen"><div class="gcard"><div class="ring"></div><b>Building your house on the lot</b><span class="gstat">Generating photoreal views…</span><div class="bar"><i></i></div></div></div>
     <div class="shots" hidden>
-      <div class="thumbs">${Array.from({ length: 12 }, (_, i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}</div>
+      <div class="thumbs">${Array.from({ length: 16 }, (_, i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}</div>
       <div class="side"><b>Photoreal shots</b><span class="sstat"></span><label class="skinrow"><input type="checkbox" class="skin" checked disabled /> Photo skin on 3D house</label><button type="button" class="fullview pri" disabled>360° view</button><button type="button" class="rerender">Re-render</button></div>
     </div>`;
   document.body.appendChild(ov);
@@ -236,7 +236,7 @@ export async function openSiteView(layout) {
     let w = (layout.footprint.width_ft + 2 * LOT_MARGIN_FT) * FT, d = (layout.footprint.depth_ft + 2 * LOT_MARGIN_FT + 10) * FT;
     // Grow the pad to cover the existing house's whole OSM outline (in the new house's axes), so no
     // part of the old house survives next to the new one.
-    if (orientInfo?.lotBuilding) {
+    if (orientInfo?.lotBuilding && orientInfo.snapped) {
       const Y = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
       for (const q of orientInfo.lotBuilding) {
         v.set(q.x, 0, q.z).applyAxisAngle(Y, -houseRoot.rotation.y);
@@ -294,7 +294,7 @@ export async function openSiteView(layout) {
   // first (front three-quarter) frame renders first and is passed to every other frame as a
   // reference so materials, landscaping and light match all the way round.
   // off = degrees from the front-door direction; elev = camera pitch; fill = share of frame width.
-  const RING = 12;
+  const RING = 16; // 22.5 deg apart: small enough steps that cross-fades read as turning
   const sideName = (off) => {
     const a = ((off % 360) + 360) % 360;
     return a < 22.5 || a >= 337.5 ? "front" : a < 67.5 ? "front-right corner" : a < 112.5 ? "right side" : a < 157.5 ? "back-right corner"
@@ -304,9 +304,10 @@ export async function openSiteView(layout) {
     const off = 30 + k * (360 / RING);
     return { off, elev: 8, fill: 0.6, tier: "main", desc: `Photo from the ${sideName(off)} of the house, at the same distance and height as every other frame of a 360° turntable` };
   });
-  // the photo skin (3D map view) has 6 projectors: use every other ring frame
-  const skinSlot = (i) => (i % 2 === 0 ? i / 2 : -1);
-  let shotToken = 0, shotTimer = 0, renderReady = null, shotsBusy = false;
+  // the photo skin (3D map view) has 6 projectors: use 6 evenly spaced ring frames
+  const SKIN_FRAMES = Array.from({ length: 6 }, (_, k) => Math.round((k * RING) / 6));
+  const skinSlot = (i) => SKIN_FRAMES.indexOf(i);
+  let shotToken = 0, shotTimer = 0, renderReady = null, shotsBusy = false, lastShotError = null;
   const shotEls = [...ov.querySelectorAll(".shot")];
   const shotUrls = [];
   const captureAngles = () => {
@@ -371,6 +372,7 @@ export async function openSiteView(layout) {
     const images = captureAngles();
     $(".sstat").textContent = "Rendering…";
     let done = 0;
+    lastShotError = null;
     images.forEach((_, i) => setShot(i, { busy: i === 0, text: i === 0 ? "Rendering" : "Queued" }));
     const progress = () => {
       $(".sstat").textContent = done === images.length ? "Done · click for 360°" : `Rendering… ${done}/${images.length}`;
@@ -402,16 +404,17 @@ export async function openSiteView(layout) {
         }
         return data.image;
       } catch (err) {
-        if (token === shotToken) setShot(i, { text: String(err.message || err).slice(0, 60) });
+        lastShotError = String(err.message || err);
+        if (token === shotToken) setShot(i, { text: lastShotError.slice(0, 60) });
         return null;
       } finally {
         if (token === shotToken) { done++; progress(); }
       }
     };
-    // hero first (it is the reference for everything else), then the rest, 4 at a time
+    // hero first (it is the reference for everything else), then the rest, 6 at a time
     const hero = await renderOne(0, null);
     const queue = images.map((_, i) => i).slice(1);
-    await Promise.all(Array.from({ length: 4 }, async () => {
+    await Promise.all(Array.from({ length: 6 }, async () => {
       while (queue.length && token === shotToken) await renderOne(queue.shift(), hero);
     }));
     if (token !== shotToken) return;
@@ -434,7 +437,7 @@ export async function openSiteView(layout) {
   };
   const enterSpin = (startShot = 0) => {
     if (!shotUrls.some(Boolean)) return false;
-    spin = { pos: ringPos(startShot), target: ringPos(startShot), origin: ringPos(startShot) };
+    spin = { pos: ringPos(startShot), vel: 0, target: ringPos(startShot), origin: ringPos(startShot) };
     controls.enabled = false;
     ov.classList.add("spinning");
     return true;
@@ -442,22 +445,28 @@ export async function openSiteView(layout) {
   const exitSpin = () => {
     if (!spin) return;
     spin = null; ov.classList.remove("spinning");
-    frameEls.forEach((el) => { el.style.opacity = 0; });
+    frameEls.forEach((el) => { el.style.opacity = 0; el.style.transform = ""; });
     controls.enabled = true; resetCamera(); // back to the close orbit view of the lot
     skin.enable($(".skin").checked);
   };
   const updateSpin = (dt) => {
-    // shortest way round the ring toward the mouse target
+    // critically damped spring toward the mouse target (shortest way round the ring): no snapping,
+    // no overshoot, eases in and out like a camera dolly
     let d = spin.target - spin.pos; d -= Math.round(d / RING) * RING;
-    spin.pos += d * Math.min(1, dt * 7);
+    const K = 38, C = 2 * Math.sqrt(K), h = Math.min(dt, 1 / 30);
+    spin.vel += (K * d - C * spin.vel) * h;
+    spin.pos += spin.vel * h;
     const p = ((spin.pos % RING) + RING) % RING, k = Math.floor(p), f = p - k;
     const a = nearestWithPhoto(k), b = nearestWithPhoto(k + 1);
-    const t = f * f * (3 - 2 * f);
-    [[a, 1], [b, t]].forEach(([i, o], n) => {
+    const t = f * f * f * (f * (6 * f - 15) + 10); // smootherstep: softer start/end of each blend
+    // slight sideways drift while blending, so neighboring frames slide past like a turning camera
+    const DRIFT = 2.4;
+    [[a, 1, -t * DRIFT], [b, t, (1 - t) * DRIFT]].forEach(([i, o, x], n) => {
       const el = frameEls[n];
       if (i < 0) { el.style.opacity = 0; return; }
       if (el.dataset.i !== String(i)) { el.src = shotUrls[i]; el.dataset.i = String(i); }
       el.style.opacity = (n === 1 && a === b ? 0 : o).toFixed(3);
+      el.style.transform = `translateX(${x.toFixed(2)}%) scale(${(1.03).toFixed(2)})`;
     });
   };
   ov.addEventListener("pointermove", (e) => {
@@ -507,6 +516,19 @@ export async function openSiteView(layout) {
   };
   const afterShots = () => {
     if (flight) return; // flight end will pick this up
+    if (!shotUrls.some(Boolean) && lastShotError) {
+      // nothing came back: say why on the loading card instead of silently dropping to the map
+      const gen = $(".gen");
+      gen.classList.add("on"); gen.querySelector(".ring").style.display = "none";
+      gen.querySelector("b").textContent = "Couldn't generate the photoreal views";
+      $(".gstat").textContent = /credit|billing|quota/i.test(lastShotError) ? `${lastShotError.slice(0, 140)} (check Gemini billing)` : lastShotError.slice(0, 160);
+      setTimeout(() => {
+        gen.classList.remove("on"); gen.querySelector(".ring").style.display = "";
+        gen.querySelector("b").textContent = "Building your house on the lot";
+      }, 6000);
+      controls.enabled = true; resetCamera();
+      return;
+    }
     $(".gen").classList.remove("on");
     if (shotUrls.some(Boolean)) enterSpin(0);
     else if (!spin) { controls.enabled = true; resetCamera(); }
@@ -534,13 +556,26 @@ export async function openSiteView(layout) {
     const th = houseRotation(orientInfo, front, long, state.orient);
     if (th !== null) setRotation(th);
   };
-  const autoOrient = async (loc) => {
+  const autoOrient = async (loc, { snap = true } = {}) => {
     $(".ostat").textContent = "Checking how neighboring houses sit…";
     try {
       orientInfo = await neighborhoodOrientation(loc.lat, loc.lon);
       const o = orientInfo;
+      // Replace the house that is there today: move onto its footprint's center (the geocoder
+      // usually returns a point near the curb), before any photos are rendered.
+      o.snapped = false;
+      if (snap && o.lotCenter && Math.hypot(o.lotCenter.x, o.lotCenter.z) > 1) {
+        state.lat = o.lotCenter.lat; state.lon = o.lotCenter.lon; o.snapped = true;
+        $(".where").textContent = `${state.label}\n${state.lat.toFixed(5)}, ${state.lon.toFixed(5)} · on the existing house's footprint`;
+        if (tiles) {
+          reorient.lat = state.lat * DEG; reorient.lon = state.lon * DEG;
+          reorient.transformLatLonHeightToOrigin(state.lat * DEG, state.lon * DEG, 0);
+          groundY = null; gAge = 0; gT = 1; houseRoot.position.y = 0;
+          if (shape) { flattener.deleteShape(shape); shape = null; }
+        }
+      } else if (o.lotCenter && Math.hypot(o.lotCenter.x, o.lotCenter.z) <= 1) o.snapped = true;
       $(".ostat").textContent = o.longAxis || o.toStreet
-        ? `Lined up with ${o.nBuildings} nearby buildings${o.street ? `, facing ${o.street}` : ""}.`
+        ? `${o.snapped ? "Replacing the existing house (same spot and axis)" : `Lined up with ${o.nBuildings} nearby buildings`}${o.street ? `, facing ${o.street}` : ""}.`
         : "No nearby buildings or streets found; set it by hand.";
       applyOrientation();
       applyFlatten();
@@ -550,12 +585,12 @@ export async function openSiteView(layout) {
     }
   };
 
-  const place = (loc, { fly = true } = {}) => {
+  const place = (loc, { fly = true, snap = true } = {}) => {
     Object.assign(state, loc);
     $(".where").textContent = `${loc.label}\n${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`;
     exitSpin();
     // orient first (renders depend on it for lighting), but never wait more than ~7 s for OSM
-    Promise.race([autoOrient(loc), new Promise((r) => setTimeout(r, 7000))]).then(scheduleShots);
+    Promise.race([autoOrient(loc, { snap }), new Promise((r) => setTimeout(r, 7000))]).then(scheduleShots);
     if (!tiles) return;
     reorient.lat = loc.lat * DEG; reorient.lon = loc.lon * DEG; // re-applied if the root tileset loads later
     reorient.transformLatLonHeightToOrigin(loc.lat * DEG, loc.lon * DEG, 0);
@@ -619,7 +654,7 @@ export async function openSiteView(layout) {
     const hit = ray.intersectObject(tiles.group, true)[0];
     if (!hit) return;
     const c = tiles.ellipsoid.getPositionToCartographic(hit.point.clone().applyMatrix4(tiles.group.matrixWorld.clone().invert()), {});
-    place({ lat: c.lat / DEG, lon: c.lon / DEG, label: state.label.replace(/ \(moved\)$/, "") + " (moved)" }, { fly: false });
+    place({ lat: c.lat / DEG, lon: c.lon / DEG, label: state.label.replace(/ \(moved\)$/, "") + " (moved)" }, { fly: false, snap: false });
   });
 
   const resize = () => {
