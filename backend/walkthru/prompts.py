@@ -45,9 +45,9 @@ The client wants to change an existing plan. Apply only the requested change.
 Return the full updated program, and list in changed_room_ids every room you added,
 removed or modified. Every room not in that list must come back exactly as it was (same id,
 type, name, target_sqft, adjacent_to); undeclared changes are discarded.
-If a room grows and the request doesn't say the house grows, shrink the living room (and
-list it as changed) so the total stays the same. If the request adds rooms or says the house
-grows, increase requested_sqft to keep rooms at 85-90% of it."""
+If a room grows or a room is added, increase requested_sqft by about the same amount; never
+shrink or move a room the client didn't mention. If a room shrinks or is removed, decrease
+requested_sqft by about the same amount. Keep room targets at 85-90% of requested_sqft."""
 
 RAW_LAYOUT_SYSTEM = """You are a residential architect. Produce a complete single-story floor plan
 for the description: footprint, entrance, every room as an axis-aligned rectangle (x, y, w, h in feet,

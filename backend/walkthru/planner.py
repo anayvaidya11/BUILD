@@ -208,6 +208,12 @@ def edit(program: RoomProgram, instruction: str) -> RoomProgram:
     result = _parse(prompts.EDIT_SYSTEM, msg, EditResult)
     edited = keep_untouched(program, result.program, set(result.changed_room_ids))
     edited.aspect_ratio = program.aspect_ratio  # same footprint shape, so the solver can keep rooms in place
+    # An edit that grows rooms grows the house by the same amount. Taking the area from another
+    # room instead (the old behaviour) made the solver re-arrange everything, since the layout
+    # being edited cannot absorb a smaller unmentioned room with the rest pinned in place.
+    delta = sum(r.target_sqft for r in edited.rooms) - sum(r.target_sqft for r in program.rooms)
+    if delta > 0 and edited.requested_sqft < program.requested_sqft + delta:
+        edited.requested_sqft = float(round((program.requested_sqft + delta) / 10) * 10)
     # The edit is the user's new ask: counts follow the edited plan, size follows the edit.
     old = requirements_of(program)
     c = requirements.count(edited.rooms)

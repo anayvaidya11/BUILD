@@ -30,4 +30,9 @@ __all__ = ["solve", "solve_dict", "render_svg", "GRID", "HALL_W", "DOOR_W", "Pro
 def solve(program: RoomProgram, keep: Layout | None = None) -> Layout:
     """`keep`: the layout being edited; unchanged rooms stay where they were."""
     previous = keep.model_dump(by_alias=True) if keep is not None else None
-    return Layout.model_validate(solve_dict(program.model_dump(), previous=previous))
+    prog = program.model_dump()
+    if keep is not None and not prog.get("footprint"):
+        # Same footprint as the layout being edited, so rooms the user didn't mention stay put
+        # (the solver's "auto" mode keeps it when the rooms still fit within 6%).
+        prog["footprint"] = keep.footprint.model_dump()
+    return Layout.model_validate(solve_dict(prog, previous=previous))
