@@ -330,9 +330,10 @@ def _size_edit(req: ChatRequest, text: str, bigger: bool) -> ChatResponse:
         return ChatResponse(action="ask", reply=f"Which one should I make {word}?", options=[r.name for r in found[:4]])
     r = found[0]
     target = round(r.area * (1.2 if bigger else 0.8) / 5) * 5
-    take = "taking the space from the Living Room" if bigger else "giving the space to the Living Room"
-    if r.type == "living":
-        take = "keeping the other rooms as they are"
+    # Grow or shrink the house by the difference; taking the area from another room made the
+    # solver re-arrange everything, since the pinned layout cannot absorb a smaller unmentioned room.
+    take = "growing the house by that amount" if bigger else "shrinking the house by that amount"
+    take += " and keeping every other room exactly as it is"
     instruction = f"Make the {r.name} {'larger' if bigger else 'smaller'}, from about {_sqft(r.area)} to {_sqft(target)} sq ft, {take}."
     return _run_edit(req, instruction, f"Making the {r.name} {word} (about {_sqft(r.area)} → {_sqft(target)} sq ft).")
 
