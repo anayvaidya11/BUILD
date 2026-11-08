@@ -63,6 +63,9 @@ fix prompt as `"<rule>: <message>"`.
 | rule id | meaning |
 |---|---|
 | `no_overlap_in_footprint` | no two rooms overlap; all inside footprint |
+| `contract_integrity` | unique room IDs; finite geometry on the 0.5 ft grid |
+| `door_geometry` | doors fit a shared/exterior wall; front door matches entrance |
+| `prompt_fidelity` | explicit room requests from the prompt appear in the plan (generation gate) |
 | `all_rooms_reachable` | every room reachable from the front door through doors |
 | `bedroom_exterior_wall` | every bedroom has an exterior wall and a door |
 | `public_bathroom` | ≥1 bathroom reachable without passing through a bedroom |
@@ -90,5 +93,7 @@ GenerateResponse = {
 }
 ```
 
-On generation failure the API serves a random file from `backend/cached/` with `cached: true`
-(disable with `WALKTHRU_CACHE_FALLBACK=0`).
+On generation failure the API serves a validated file from `backend/cached/`
+with `cached: true` (disable with `WALKTHRU_CACHE_FALLBACK=0`). It prefers a
+backup matching explicit bedroom, bathroom, office, and square-footage requests;
+if none match, it chooses any valid backup. `?cached=true` uses the same selection.
