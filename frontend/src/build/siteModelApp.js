@@ -3,7 +3,7 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { DEFAULT_PROMPT, DEFAULT_PLAN, PHASES, RULES, lockupHTML, buildHouse, buildScript, playScript, generate, FURNITURE_STYLES,
   tween, tickTweens, ease, createWalker, planSVG, sqft, fmtFt, roomById, buildFurniture, editLayout,
-  planFromResponse, parsePrompt, ruleLabel } from "./core.js";
+  planFromResponse, parsePrompt, ruleLabel, smoothDamp } from "./core.js";
 import { enhanceRenderer, fitSun, createComposer } from "./render.js";
 import { createFurnitureDrag } from "./interact.js";
 import { addSiteButton } from "./site.js";
@@ -17,6 +17,10 @@ let mounted = false;
 export function mountSiteModel() {
   if (mounted) return; // React StrictMode mounts effects twice in dev; the scene is a page singleton
   mounted = true;
+  // dev-only: ?raf=timer drives animation with timers so automated checks run in a hidden browser pane
+  if (process.env.NODE_ENV !== "production" && new URLSearchParams(location.search).get("raf") === "timer") {
+    window.requestAnimationFrame = (cb) => setTimeout(() => cb(performance.now()), 16);
+  }
 let KEEP_ARRANGEMENT = null; // furniture the user dragged, carried across edit rebuilds
 const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
 const $ = (s) => document.querySelector(s);
@@ -201,6 +205,59 @@ new MutationObserver(resize).observe(document.body, { attributes: true, attribut
 addEventListener("resize", resize);
 mountIsland(layout); mountHouse(layout); resetHouse(); resize();
 
+// ---------- builder agent: a small drone that flies room to room, sets each board down and furnishes it ----------
+const agent = (() => {
+  const g = new THREE.Group(); g.visible = false; g.name = "builder-agent";
+  const shell = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.35 });
+  const blue = new THREE.MeshStandardMaterial({ color: 0x2b45f5, emissive: 0x2b45f5, emissiveIntensity: 0.6 });
+  const body = new THREE.Mesh(new RoundedBoxGeometry(2.2, 0.9, 2.2, 3, 0.4), shell); body.castShadow = true;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.12, 8, 48), blue); ring.rotation.x = Math.PI / 2;
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.34, 16, 12), new THREE.MeshStandardMaterial({ color: 0x2b45f5, emissive: 0x7d93ff, emissiveIntensity: 1.6 }));
+  eye.position.y = -0.4;
+  const beamGeo = new THREE.ConeGeometry(3.4, 10, 32, 1, true); beamGeo.translate(0, -5, 0);
+  const beam = new THREE.Mesh(beamGeo, new THREE.MeshBasicMaterial({ color: 0x7d93ff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+  const glow = new THREE.PointLight(0x9fb0ff, 0, 34, 1.6); glow.position.y = -1;
+  g.add(body, ring, eye, beam, glow);
+  world.add(g);
+  const pos = g.position, target = new THREE.Vector3(0, 34, 0), vx = {}, vy = {}, vz = {}, wp = new THREE.Vector3();
+  const tagEl = $("#agentTag");
+  let on = false, beamK = 0, beamTarget = 0;
+  return {
+    show() {
+      if (on) return; on = true; g.visible = true; tagEl.hidden = false;
+      pos.set(0, 46, 0); target.set(0, 30, 0); g.scale.setScalar(0.01);
+      tween(T(500), (k) => g.scale.setScalar(Math.max(0.01, k)), ease.spring);
+    },
+    hide(ms = 450) {
+      if (!on) return; on = false; beamTarget = 0; target.y += 18;
+      tween(T(ms), (k) => g.scale.setScalar(Math.max(0.01, 1 - k)), ease.settle).then(() => { if (!on) { g.visible = false; tagEl.hidden = true; } });
+    },
+    goTo(roomId, height, text) { const c = house.roomCenter(roomId); target.set(c.x, height, c.z); if (text) this.say(text); },
+    goAbove(height, text) { target.set(0, height, 0); if (text) this.say(text); },
+    say(t) { tagEl.querySelector("span").textContent = t; },
+    beam(v) { beamTarget = v; },
+    // where furniture leaves the drone, in world-group coordinates
+    origin() { return pos.clone().add(new THREE.Vector3(0, -1.2, 0)); },
+    get on() { return on; },
+    update(dt, t) {
+      if (!g.visible) return;
+      const st = reduce ? 0.05 : 0.42;
+      pos.x = smoothDamp(pos.x, target.x, vx, st, dt);
+      pos.y = smoothDamp(pos.y, target.y + Math.sin(t * 2.2) * 0.35, vy, st, dt);
+      pos.z = smoothDamp(pos.z, target.z, vz, st, dt);
+      ring.rotation.z += dt * 2.4;
+      g.rotation.z = THREE.MathUtils.clamp(-(vx.v ?? 0) * 0.02, -0.3, 0.3);
+      g.rotation.x = THREE.MathUtils.clamp((vz.v ?? 0) * 0.02, -0.3, 0.3);
+      beamK += (beamTarget - beamK) * Math.min(1, dt * 6);
+      beam.material.opacity = 0.17 * beamK; beam.visible = beamK > 0.01; glow.intensity = 45 * beamK;
+      beam.scale.set(1, Math.max(0.01, pos.y / 10), 1); // the beam always reaches the floor
+      g.getWorldPosition(wp).project(camera);
+      tagEl.style.left = (wp.x * 0.5 + 0.5) * innerWidth + "px"; tagEl.style.top = (-wp.y * 0.5 + 0.5) * innerHeight + "px";
+    },
+  };
+})();
+const roomName = (id) => roomById(id, layout)?.name ?? id;
+
 let last = performance.now(), clock = 0;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now; clock += dt;
@@ -218,7 +275,8 @@ function frame(now) {
   tilt.update(dt);
   world.rotation.set(tiltProxy.rotation.x * tiltW, tiltProxy.rotation.y * tiltW, 0);
   world.position.y = st === "landing" && !reduce ? Math.sin(clock * 0.8) * 1.1 * tiltW : world.position.y * 0.9;
-  if (st === "result") { controls.update(); updateTags(); furnDrag?.update(dt); }
+  agent.update(dt, clock);
+  if (st === "result") { controls.update(); updateTags(); updateDimTags(); furnDrag?.update(dt); }
   if (st === "walk") { walker.update(dt); updateMini(); }
   if (st === "loading") $("#timer").textContent = ((now - startedAt) / 1000).toFixed(1) + " s";
   if (post && st !== "walk") post.render(); else renderer.render(scene, camera);
@@ -316,35 +374,49 @@ function raiseWalls() {
 }
 // pieces are set down one by one: big items first, each drops in and bounces to rest
 const piecesIn = (id) => (furn.byRoom[id]?.children ?? []).reduce((a, it) => a + it.children.length, 0);
-function furnishRoom(id) {
+function furnishRoom(id, delay = 0) {
   const g = furn.byRoom[id]; if (!g) return;
   g.visible = true;
   const items = [...g.children].sort((a, b) => (b.userData.collide ? 1 : 0) - (a.userData.collide ? 1 : 0));
   items.forEach((it) => { it.visible = false; });
+  // the drone is the source: each piece leaves it, arcs down and lands with a small bounce
+  const src = new THREE.Vector3();
   items.forEach((it, i) => {
-    const home = it.userData.home, dx = (Math.random() - 0.5) * 1.4, dz = (Math.random() - 0.5) * 1.4, r0 = (Math.random() - 0.5) * 0.5;
-    tween(T(700), (k) => {
+    const home = it.userData.home, r0 = (Math.random() - 0.5) * 0.6;
+    let from = null;
+    tween(T(720), (k) => {
+      if (!from) { world.localToWorld(src.copy(agent.on ? agent.origin() : new THREE.Vector3(home.x, 8, home.z))); from = g.worldToLocal(src.clone()); }
       it.visible = true;
-      it.position.set(home.x + dx * (1 - k), 6 * (1 - k), home.z + dz * (1 - k));
+      const arc = Math.sin(Math.PI * Math.min(1, k)) * 2.2;
+      it.position.set(from.x + (home.x - from.x) * k, Math.max(0, from.y * (1 - k) + arc * (1 - k)), from.z + (home.z - from.z) * k);
       it.rotation.y = r0 * (1 - k);
-      it.scale.setScalar(0.75 + 0.25 * Math.min(1, k * 1.4));
-    }, ease.drop, T(i * 70)).then(() => { it.position.copy(home); it.rotation.y = 0; it.scale.setScalar(1); });
+      it.scale.setScalar(0.35 + 0.65 * Math.min(1, k * 1.3));
+    }, ease.drop, T(delay + i * 85)).then(() => { it.position.copy(home); it.rotation.y = 0; it.scale.setScalar(1); });
   });
   const card = document.querySelector(`.card[data-id="${id}"]`);
   const n = piecesIn(id);
   if (card && n) { card.classList.add("furnished"); card.querySelector("span").textContent = `${n} pieces`; }
 }
+function agentPhase(id) {
+  if (id === "plan") { agent.show(); agent.goAbove(30 * houseFit(), "Reading the room program"); agent.beam(0); }
+  if (id === "solve") agent.say("Laying out rooms");
+  if (id === "check") { agent.goAbove(28 * houseFit(), "Checking layout rules"); agent.beam(0.2); }
+}
 function onEvent(e) {
   switch (e.type) {
-    case "phase": setPhase(e.id); if (e.id === "furnish") { const r0 = rig.radius, h0 = rig.height; tween(T(3200), (k) => { rig.radius = r0 - 14 * k; rig.height = h0 + 8 * k; rig.spin = 0.12 - 0.06 * k; }, ease.settle); } break;
+    case "phase": setPhase(e.id); agentPhase(e.id); if (e.id === "furnish") { const r0 = rig.radius, h0 = rig.height; tween(T(3200), (k) => { rig.radius = r0 - 14 * k; rig.height = h0 + 8 * k; rig.spin = 0.12 - 0.06 * k; }, ease.settle); } break;
     case "thought": typeLine(e.text); break;
     case "room": addBriefCard(e.room); break;
-    case "place": placeRoom(e.roomId, e.reflow); break;
-    case "check": addCheck(e); if (!e.pass) fixLog.push(`<li><b>Round ${e.round ?? 1}.</b> ${ruleLabel(e.rule)}: ${e.message}</li>`); break;
+    case "place": agent.show(); agent.goTo(e.roomId, 13, `${e.reflow ? "Moving" : "Placing"} ${roomName(e.roomId)}`); agent.beam(1); placeRoom(e.roomId, e.reflow); break;
+    case "check": agent.say(`Checking: ${ruleLabel(e.rule).toLowerCase()}`); addCheck(e); if (!e.pass) fixLog.push(`<li><b>Round ${e.round ?? 1}.</b> ${ruleLabel(e.rule)}: ${e.message}</li>`); break;
     case "fix": doFix(e); break;
-    case "walls": typeLine("Raising walls, cutting window openings, setting door frames."); raiseWalls(); break;
-    case "furnish": furnishRoom(e.roomId); break;
-    case "done": finish(e.stats); break;
+    case "walls": typeLine("Raising walls, cutting window openings, setting door frames."); agent.goAbove(34 * houseFit(), "Raising walls and setting windows"); agent.beam(0.4); raiseWalls(); break;
+    case "furnish": {
+      const n = (furn.byRoom[e.roomId]?.children ?? []).length;
+      agent.goTo(e.roomId, 10.5, n ? `Furnishing ${roomName(e.roomId)} · ${n} pieces` : `Checking ${roomName(e.roomId)}`); agent.beam(n ? 1 : 0.3);
+      furnishRoom(e.roomId, 380); break;
+    }
+    case "done": agent.say("Done — your house is ready"); agent.beam(0); setTimeout(() => agent.hide(), T(700)); finish(e.stats); break;
   }
 }
 
@@ -428,7 +500,7 @@ $("#skipBtn").addEventListener("click", () => {
   rest.at(-1).at = Math.max(rest.at(-1).at, 2600);
   run = playScript(rest, onEvent);
 });
-$("#promptForm").addEventListener("submit", (e) => { e.preventDefault(); start($("#prompt").value.trim() || DEFAULT_PROMPT); });
+$("#promptForm").addEventListener("submit", (e) => { e.preventDefault(); briefTurn($("#prompt").value.trim() || DEFAULT_PROMPT); });
 
 // ---------- result ----------
 let lastStats;
@@ -442,6 +514,8 @@ function renderPanel() {
   lastRoom = undefined;
   buildTags();
   refreshMinis();
+  buildMeasure3d(); syncTools();
+  if (tools.view === "plan") renderPlan();
 }
 function renderRoomList(changed = new Set()) {
   $("#roomList").innerHTML = layout.rooms.map((r) => { const n = piecesIn(r.id); return `<li tabindex="0" data-id="${r.id}" class="${changed.has(r.id) ? "changed" : ""}"><div><i class="sw" style="background:#${(FLOOR[r.type] ?? 0xe9e6df).toString(16).padStart(6, "0")}"></i>${r.name}</div><span>${fmtFt(r.w)} × ${fmtFt(r.h)} · ${sqft(r)} sq ft${n ? ` · ${n} pcs` : ""}</span></li>`; }).join("");
@@ -461,6 +535,7 @@ function finish(stats) {
   $("#fixLog").innerHTML = fixLog.join("") + `<li><b>${stats.rounds ? `Round ${stats.rounds + 1}` : "Round 1"}.</b> All ${n} rules pass.</li>`;
   $("#editMsg").textContent = ""; $("#editMsg").className = "editmsg";
   renderPanel();
+  openChat(stats);
   // settle into a high three-quarter view so the furnished rooms read over the walls
   rig.target.set(0, 0, 0); controls.target.set(0, 0, 0);
   const r0 = rig.radius, h0 = rig.height, fit = houseFit();
@@ -501,7 +576,7 @@ function buildTags() {
   $("#tags").innerHTML = ""; tagEls.length = 0;
   for (const r of layout.rooms) {
     if (r.type === "hall" || r.type === "laundry") continue;
-    const t = document.createElement("div"); t.className = "tag"; t.dataset.id = r.id; t.textContent = r.name;
+    const t = document.createElement("div"); t.className = "tag"; t.dataset.id = r.id; t.innerHTML = `${r.name}<small>${fmtFt(r.w)} × ${fmtFt(r.h)} · ${sqft(r)} sq ft</small>`;
     $("#tags").append(t); tagEls.push([t, house.roomCenter(r.id).add(new THREE.Vector3(0, 11, 0))]);
   }
 }
@@ -564,6 +639,8 @@ async function animateEdit(res) {
   const msg = $("#editMsg");
   editing = true; highlight(null); controls.autoRotate = false; furnDrag.enabled = false;
   KEEP_ARRANGEMENT = furn?.getArrangement?.() ?? null; // moved furniture survives the edit
+  const focus = res.changed.find((id) => house.floors[id]);
+  if (focus) { agent.show(); agent.goTo(focus, 14, `Rebuilding ${roomName(focus)}`); agent.beam(1); }
   msg.className = "editmsg"; msg.textContent = "Rebuilding the changed rooms…";
   const ids = new Set(res.changed);
   const oldRects = layout.rooms.filter((r) => ids.has(r.id));
@@ -586,6 +663,9 @@ async function animateEdit(res) {
     newWalls.forEach((w) => (w.scale.y = Math.max(0.001, k)));
   }, ease.drop);
   ids.forEach((id) => house.floors[id] && pulse(id));
+  // re-furnish the changed rooms from the drone, then it leaves
+  for (const id of ids) if (furn.byRoom[id]) { agent.goTo(id, 10.5, `Furnishing ${roomName(id)}`); furnishRoom(id, 200); await new Promise((r) => setTimeout(r, T(700))); }
+  agent.beam(0); agent.hide();
   plan = { ...plan, layout, ...(res.response ? { program: res.response.program, response: res.response } : {}) };
   renderPanel(); renderRoomList(ids);
   msg.className = "editmsg ok"; msg.textContent = res.note;
@@ -593,22 +673,17 @@ async function animateEdit(res) {
   toast(`Updated. ${ids.size} room${ids.size === 1 ? "" : "s"} changed${chk.length ? `, ${ok} of ${chk.length} rules pass` : ", all rules still pass"}.`);
   editing = false; furnDrag.enabled = document.body.dataset.state === "result";
 }
-$("#editForm").addEventListener("submit", (e) => {
-  e.preventDefault(); if (editing) return;
-  const instr = $("#editInput").value.trim() || "Make the kitchen bigger";
-  $("#editInput").value = "";
-  applyEdit(instr);
-});
-$("#editMsg").addEventListener("click", (e) => { if (e.target.matches(".ex")) { $("#editInput").value = e.target.textContent; $("#editInput").focus(); } });
-$("#newBtn").addEventListener("click", async () => {
+async function goLanding() {
   if (diving) return;
   await mist.cover(T(600));
+  tools.view = "3d"; tools.measure = false; syncTools();
   controls.enabled = false; controls.autoRotate = false; highlight(null); resetHouse(); furnDrag.enabled = false;
   loose.forEach((b) => { b.visible = true; b.scale.setScalar(1); b.userData.orbit.on = true; });
   Object.assign(rig, { theta: LANDING.theta, radius: LANDING.radius, height: LANDING.height, spin: LANDING.spin }); rig.target.set(0, LANDING.ty, 0);
   setState("landing"); placeCam(); $("#prompt").focus();
   await mist.reveal(T(1000));
-});
+}
+$("#newBtn").addEventListener("click", async () => { convo.length = 0; $("#clarify").hidden = true; await goLanding(); });
 
 // ---------- walk: ceilings on, warm lamps on, furniture collides ----------
 let saved = null;
@@ -707,6 +782,342 @@ const shownIds = () => tiles.filter((t) => !t.hidden).map((t) => t.dataset.id);
 // Site view: "On site" button next to Walk through (Google 3D tiles; see core/site.js).
 addSiteButton($("#walkBtn"), () => layout);
 addPhotorealButton($("#walkBtn"), () => ({ layout: layout, furniture: furn })); // Blender Cycles 360° tour, renders automatically
+// ---------- design chat: an iterative loop with the agent (POST /api/chat; local fallback) ----------
+const convo = []; // the whole conversation, from the first brief through every refinement
+let chatBusy = false;
+const msgsEl = $("#msgs"), optsEl = $("#opts");
+function addMsg(role, text, { ask = false, meta = "" } = {}) {
+  const li = document.createElement("li");
+  li.className = `msg ${role}${ask ? " ask" : ""}`;
+  li.textContent = text;
+  if (meta) { const m = document.createElement("span"); m.className = "meta"; m.textContent = meta; li.append(m); }
+  msgsEl.append(li); msgsEl.scrollTop = msgsEl.scrollHeight;
+  return li;
+}
+function setOptions(list, kind = "ask") {
+  optsEl.className = "opts" + (kind === "suggest" ? " suggest" : "");
+  optsEl.innerHTML = "";
+  for (const t of (list ?? []).slice(0, 4)) {
+    const b = document.createElement("button"); b.type = "button"; b.textContent = t;
+    b.addEventListener("click", () => sendChat(t)); optsEl.append(b);
+  }
+}
+let typingEl = null;
+function showTyping(on) {
+  typingEl?.remove(); typingEl = null;
+  if (on) { typingEl = document.createElement("li"); typingEl.className = "msg agent typing"; typingEl.innerHTML = "<i></i><i></i><i></i>"; msgsEl.append(typingEl); msgsEl.scrollTop = msgsEl.scrollHeight; }
+}
+function suggestions() {
+  const rs = layout.rooms.filter((r) => !["hall", "closet", "entry"].includes(r.type));
+  const kitchen = rs.find((r) => r.type === "kitchen"), bed = rs.find((r) => r.type === "bedroom"), primary = rs.find((r) => r.type === "primary_bedroom");
+  const office = rs.find((r) => r.type === "office"), living = rs.find((r) => r.type === "living");
+  return [kitchen && "Make the kitchen bigger", primary && `How big is the ${primary.name.toLowerCase()}?`, bed && `Make ${bed.name.toLowerCase()} smaller`,
+    office ? "Why is the office where it is?" : living && "How big is the whole house?"].filter(Boolean);
+}
+const vagueBrief = (t) => !/\d/.test(t) && !/\b(studio|one|two|three|four|five|six)\b[\s-]*(bed|br\b|bedroom)/i.test(t);
+// offline fallback when the API is unreachable: same contract as /api/chat, decided locally
+function localChat(messages, withHouse) {
+  const users = messages.filter((m) => m.role === "user").map((m) => m.content);
+  // a bare answer ("Kitchen") to a "which room?" question carries the direction of the request before it
+  const last = users.at(-1), low = (/bigger|larger|wider|smaller|narrower|shrink|grow/i.test(last) ? last : users.slice(-2).join(" ")).toLowerCase();
+  const userText = messages.filter((m) => m.role === "user").map((m) => m.content).join(", ");
+  if (!withHouse) {
+    const asked = messages.filter((m) => m.role === "assistant").length;
+    if (vagueBrief(userText) && asked === 0) return { action: "ask", reply: "Happy to. How many bedrooms should it have?", options: ["1 bedroom", "2 bedrooms", "3 bedrooms", "4 bedrooms"] };
+    if (!/\d[\d,.]*\s*(k\b|sq|sf|square)/i.test(userText) && asked === 1 && !/\d{3}/.test(userText)) return { action: "ask", reply: "And roughly how big overall?", options: ["About 1,000 sq ft", "About 1,600 sq ft", "About 2,200 sq ft", "You choose"] };
+    return { action: "generate", reply: "Got it — planning it now.", brief: userText.replace(/,?\s*you choose/i, ""), options: [] };
+  }
+  if (/\b(start over|new house|instead|from scratch)\b/.test(low)) return { action: "generate", reply: "Starting a fresh plan.", brief: last, options: [] };
+  const room = [...layout.rooms].sort((a, b) => b.name.length - a.name.length).find((r) => low.includes(r.name.toLowerCase()) || low.includes(r.type.replace("_", " ")));
+  if (/how (big|large|wide|long)|sq ?ft|square feet|size|dimension/.test(low)) {
+    if (room) return { action: "answer", reply: `${room.name} is ${fmtFt(room.w)} × ${fmtFt(room.h)}, ${sqft(room)} sq ft.`, options: [] };
+    const total = Math.round(layout.rooms.reduce((a, r) => a + r.w * r.h, 0));
+    return { action: "answer", reply: `The house is ${fmtFt(layout.footprint.width_ft)} × ${fmtFt(layout.footprint.depth_ft)} outside, ${total.toLocaleString()} sq ft of rooms.`, options: [] };
+  }
+  if (/bigger|larger|wider|smaller|narrower|shrink|grow|more space/.test(low)) {
+    if (!room) {
+      const big = [...layout.rooms].filter((r) => r.type !== "hall").sort((a, b) => b.w * b.h - a.w * a.h).slice(0, 4);
+      const dir = /smaller|narrower|shrink/.test(low) ? "smaller" : "bigger";
+      return { action: "ask", reply: `Which room should get ${dir}?`, options: big.map((r) => `Make the ${r.name.toLowerCase()} ${dir}`) };
+    }
+    const res = editLayout(layout, low);
+    if (res) return { action: "edit", reply: res.note, options: [], local: res };
+    return { action: "answer", reply: `I couldn't resize ${room.name} without breaking a neighbouring room. Try a different room, or ask for a new plan.`, options: [] };
+  }
+  return { action: "answer", reply: "I can resize rooms (\"make the kitchen bigger\"), tell you sizes, or start a new plan. What would you like to change?", options: suggestions() };
+}
+async function callChat(messages, withHouse) {
+  try {
+    const ctl = new AbortController(); const timer = setTimeout(() => ctl.abort(), 120000);
+    const r = await fetch(`${API}/api/chat`, { method: "POST", headers: { "content-type": "application/json" }, signal: ctl.signal,
+      body: JSON.stringify({ messages, program: withHouse ? plan.program : null, layout: withHouse ? layout : null }) });
+    clearTimeout(timer);
+    if (!r.ok) throw new Error(`chat ${r.status}`);
+    return await r.json();
+  } catch (err) { console.warn("chat API unavailable, answering locally", err); return localChat(messages, withHouse); }
+}
+function editFromResponse(resp) {
+  const old = new Map(layout.rooms.map((q) => [q.id, q]));
+  const now = new Map(resp.layout.rooms.map((q) => [q.id, q]));
+  const changed = [...new Set([...resp.layout.rooms.filter((q) => { const o = old.get(q.id); return !o || o.x !== q.x || o.y !== q.y || o.w !== q.w || o.h !== q.h; }).map((q) => q.id),
+    ...[...old.keys()].filter((id) => !now.has(id))])];
+  const named = changed.map((id) => now.get(id)).filter(Boolean).sort((a, b) => b.w * b.h - a.w * a.h)[0];
+  const note = changed.length ? `${named ? `${named.name} is now ${fmtFt(named.w)} × ${fmtFt(named.h)} (${sqft(named)} sq ft). ` : ""}${changed.length} room${changed.length === 1 ? "" : "s"} changed; the rest of the house stayed put.` : "The planner kept the layout as it was.";
+  return { layout: resp.layout, changed, note, response: resp };
+}
+async function sendChat(text) {
+  text = (text ?? "").trim();
+  if (!text || chatBusy || editing || document.body.dataset.state !== "result") return;
+  chatBusy = true; $("#chatForm .send").disabled = true; setOptions([]);
+  addMsg("user", text); convo.push({ role: "user", content: text });
+  showTyping(true);
+  const res = await callChat(convo, true);
+  showTyping(false);
+  convo.push({ role: "assistant", content: res.reply });
+  if (res.action === "generate") {
+    addMsg("agent", res.reply);
+    chatBusy = false; $("#chatForm .send").disabled = false;
+    await goLanding(); $("#prompt").value = res.brief || text; start(res.brief || text);
+    return;
+  }
+  if (res.action === "edit") {
+    addMsg("agent", res.reply);
+    let r = res.local ?? (res.result ? editFromResponse(res.result) : null);
+    // the planner kept the layout (e.g. offline backend): resize locally so the request still lands
+    // (a tapped answer like "Kitchen" is read together with the request it answers: "make it bigger")
+    if (r && !r.changed.length) {
+      const intent = convo.filter((m) => m.role === "user").slice(-2).map((m) => m.content).join(" ");
+      const loc = editLayout(layout, text) ?? editLayout(layout, intent);
+      if (loc) { r = loc; addMsg("note", `Resized locally while the live planner is offline: ${loc.note}`); }
+    }
+    if (r?.changed.length) await animateEdit(r);
+    setOptions(res.options?.length ? res.options : suggestions(), "suggest");
+  } else {
+    addMsg("agent", res.reply, { ask: res.action === "ask" });
+    setOptions(res.options?.length ? res.options : res.action === "ask" ? [] : suggestions(), res.action === "ask" ? "ask" : "suggest");
+  }
+  chatBusy = false; $("#chatForm .send").disabled = false;
+}
+$("#chatForm").addEventListener("submit", (e) => { e.preventDefault(); const v = $("#chatInput").value; $("#chatInput").value = ""; autosize(); sendChat(v); });
+const autosize = () => { const t = $("#chatInput"); t.style.height = "auto"; t.style.height = Math.min(120, t.scrollHeight) + "px"; };
+$("#chatInput").addEventListener("input", autosize);
+$("#chatInput").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#chatForm").requestSubmit(); } });
+// the house is ready: the agent opens the conversation
+function openChat(stats) {
+  msgsEl.innerHTML = "";
+  for (const m of convo) addMsg(m.role === "user" ? "user" : "agent", m.content);
+  const total = Math.round(layout.rooms.reduce((a, r) => a + r.w * r.h, 0));
+  const intro = `I planned ${layout.rooms.length} rooms, ${total.toLocaleString()} sq ft on a ${fmtFt(layout.footprint.width_ft)} × ${fmtFt(layout.footprint.depth_ft)} footprint`
+    + `${stats.rounds ? `, and fixed ${stats.rounds} rule failure round${stats.rounds === 1 ? "" : "s"} on the way` : ""}. What would you like to change? I'll re-check every rule after each change.`;
+  addMsg("agent", intro, { meta: `${stats.rulesPassed} of ${stats.rules ?? 7} layout rules pass` });
+  convo.push({ role: "assistant", content: intro });
+  setOptions(suggestions(), "suggest");
+}
+// panel tabs
+document.querySelectorAll(".ptabs [role=tab]").forEach((tab) => tab.addEventListener("click", () => {
+  document.querySelectorAll(".ptabs [role=tab]").forEach((t) => t.setAttribute("aria-selected", t === tab));
+  $("#paneChat").hidden = tab.dataset.tab !== "chat"; $("#paneInfo").hidden = tab.dataset.tab !== "info";
+  if (tab.dataset.tab === "info") refreshMinis();
+}));
+
+// ---------- landing: ask clarifying questions only when the brief is too vague to plan ----------
+let briefBusy = false;
+async function briefTurn(text) {
+  if (diving || run || briefBusy) return;
+  const firstTurn = !convo.length || $("#clarify").hidden;
+  if (firstTurn) convo.length = 0;
+  convo.push({ role: "user", content: text });
+  const userText = convo.filter((m) => m.role === "user").map((m) => m.content).join(", ");
+  // clear briefs go straight to the planner (no extra model call)
+  if (firstTurn && !vagueBrief(text)) { $("#clarify").hidden = true; start(text); return; }
+  briefBusy = true; const btn = $("#buildBtn"); btn.disabled = true; btn.textContent = "Thinking…";
+  const res = await callChat(convo, false);
+  briefBusy = false; btn.disabled = false; btn.textContent = "Build it";
+  convo.push({ role: "assistant", content: res.reply });
+  if (res.action === "ask") {
+    $("#clarifyQ").textContent = res.reply;
+    $("#clarifyOpts").innerHTML = (res.options ?? []).slice(0, 4).map((o) => `<button type="button" class="chip">${o}</button>`).join("");
+    $("#clarify").hidden = false; $("#prompt").value = ""; $("#prompt").placeholder = "Type an answer, or pick one below"; $("#prompt").focus();
+    return;
+  }
+  $("#clarify").hidden = true; $("#prompt").placeholder = "";
+  start(res.brief || userText);
+}
+$("#clarifyOpts").addEventListener("click", (e) => { if (e.target.matches(".chip")) briefTurn(e.target.textContent); });
+
+// ---------- measurements: 3D grid + dimension lines; plan view with grid, rulers, scale bar, tape measure ----------
+const tools = { view: "3d", grid: false, dims: false, measure: false };
+let grid3d = null, dims3d = null; const dimTagEls = [];
+function buildMeasure3d() {
+  for (const o of [grid3d, dims3d]) if (o) { world.remove(o); o.traverse((n) => { n.geometry?.dispose(); n.material?.dispose?.(); }); }
+  const { width_ft: W, depth_ft: D } = layout.footprint;
+  // foot grid aligned to the house corner; every 5th line stronger
+  const S = Math.ceil((Math.max(W, D) + 30) / 10) * 10;
+  grid3d = new THREE.Group(); grid3d.visible = tools.grid;
+  const mk = (div, color, op) => { const g = new THREE.GridHelper(S, div, color, color); g.material.transparent = true; g.material.opacity = op; g.material.depthWrite = false; return g; };
+  const minor = mk(S, 0x6f7f9c, 0.28), major = mk(S / 5, 0x2b45f5, 0.38);
+  const off = (step) => (((-W / 2 + S / 2) % step) + step) % step, offz = (step) => (((-D / 2 + S / 2) % step) + step) % step;
+  minor.position.set(off(1), 0.05, offz(1)); major.position.set(off(5), 0.06, offz(5));
+  grid3d.add(minor, major); world.add(grid3d);
+  // overall dimension strings outside the walls (north and west), with end ticks
+  dims3d = new THREE.Group(); dims3d.visible = tools.dims;
+  const pts = [], o = 5, t = 1;
+  const seg = (a, b) => pts.push(a, b);
+  const x0 = -W / 2, x1 = W / 2, z0 = -D / 2, z1 = D / 2, y = 0.3;
+  seg(new THREE.Vector3(x0, y, z0 - o), new THREE.Vector3(x1, y, z0 - o));
+  seg(new THREE.Vector3(x0, y, z0 - o - t), new THREE.Vector3(x0, y, z0 - 0.6)); seg(new THREE.Vector3(x1, y, z0 - o - t), new THREE.Vector3(x1, y, z0 - 0.6));
+  seg(new THREE.Vector3(x0 - o, y, z0), new THREE.Vector3(x0 - o, y, z1));
+  seg(new THREE.Vector3(x0 - o - t, y, z0), new THREE.Vector3(x0 - 0.6, y, z0)); seg(new THREE.Vector3(x0 - o - t, y, z1), new THREE.Vector3(x0 - 0.6, y, z1));
+  dims3d.add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(pts), new THREE.LineBasicMaterial({ color: 0x2b45f5 })));
+  world.add(dims3d);
+  $("#dimTags").innerHTML = ""; dimTagEls.length = 0;
+  for (const [txt, p] of [[fmtFt(W), new THREE.Vector3(0, y, z0 - o)], [fmtFt(D), new THREE.Vector3(x0 - o, y, 0)]]) {
+    const el = document.createElement("div"); el.className = "dimtag"; el.textContent = txt; $("#dimTags").append(el); dimTagEls.push([el, p]);
+  }
+}
+const dv = new THREE.Vector3();
+function updateDimTags() {
+  const show = tools.dims && tools.view === "3d";
+  for (const [el, p] of dimTagEls) {
+    el.style.display = show ? "" : "none"; if (!show) continue;
+    world.localToWorld(dv.copy(p)).project(camera);
+    el.style.left = (dv.x * 0.5 + 0.5) * innerWidth + "px"; el.style.top = (-dv.y * 0.5 + 0.5) * innerHeight + "px";
+  }
+}
+function syncTools() {
+  document.querySelectorAll("#viewbar [data-view]").forEach((b) => b.setAttribute("aria-pressed", b.dataset.view === tools.view));
+  for (const k of ["grid", "dims", "measure"]) document.querySelector(`#viewbar [data-tog="${k}"]`).setAttribute("aria-pressed", tools[k]);
+  document.body.classList.toggle("dims", tools.dims);
+  document.body.classList.toggle("planmode", tools.view === "plan");
+  if (grid3d) grid3d.visible = tools.grid && tools.view === "3d";
+  if (dims3d) dims3d.visible = tools.dims && tools.view === "3d";
+  const pv = $("#planView"); pv.hidden = tools.view !== "plan";
+  pv.classList.toggle("measuring", tools.measure);
+  const svg = $("#planSvg"); svg.classList.toggle("grid", tools.grid); svg.classList.toggle("dims", tools.dims);
+  const inPlan = tools.view === "plan";
+  controls.enabled = !inPlan && document.body.dataset.state === "result" && !editing;
+  if (furnDrag) furnDrag.enabled = !inPlan && document.body.dataset.state === "result" && !editing;
+  $("#planHint").textContent = tools.measure ? "Drag between two points to measure · hold Shift to turn off snapping" : "Scroll to zoom · drag to pan · hover a room for its size";
+}
+$("#viewbar").addEventListener("click", (e) => {
+  const b = e.target.closest("button"); if (!b) return;
+  if (b.dataset.view) { tools.view = b.dataset.view; if (tools.view === "plan") renderPlan(); else tools.measure = false; }
+  if (b.dataset.tog) {
+    tools[b.dataset.tog] = !tools[b.dataset.tog];
+    if (b.dataset.tog === "measure" && tools.measure && tools.view !== "plan") { tools.view = "plan"; renderPlan(); }
+    if (b.dataset.tog === "measure" && !tools.measure) clearTape();
+  }
+  syncTools();
+});
+
+// plan view (SVG in feet; origin = the footprint's top-left corner)
+const PV = { vb: { x: 0, y: 0, w: 60, h: 40 } };
+const planSvgEl = $("#planSvg");
+function itemBoxes() {
+  const { width_ft: W, depth_ft: D } = layout.footprint, out = [];
+  furn.group.updateMatrixWorld(true);
+  const inv = furn.group.matrixWorld.clone().invert(), bb = new THREE.Box3(), tb = new THREE.Box3(), m = new THREE.Matrix4();
+  for (const it of furn.items) {
+    if (!it.parent || it.userData.wall || /rug|runner|mat/.test(it.userData.name)) continue;
+    bb.makeEmpty();
+    it.traverse((o) => { if (o.isMesh) { o.geometry.computeBoundingBox(); tb.copy(o.geometry.boundingBox).applyMatrix4(m.multiplyMatrices(inv, o.matrixWorld)); bb.union(tb); } });
+    if (bb.isEmpty()) continue;
+    out.push([bb.min.x + W / 2, bb.min.z + D / 2, bb.max.x - bb.min.x, bb.max.z - bb.min.z, it.userData.name]);
+  }
+  return out;
+}
+function renderPlan() {
+  const { width_ft: W, depth_ft: D } = layout.footprint;
+  $("#planView").hidden = false; // must be laid out before it can be fitted
+  const raw = planSVG(layout, { pad: 0, labels: true, dims: true });
+  const inner = raw.slice(raw.indexOf(">") + 1, raw.lastIndexOf("</svg>"));
+  const big = Math.max(W, D) + 200;
+  const fur = itemBoxes().map(([x, y, w, h, n]) => `<rect class="fur" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}" rx=".2"><title>${n}</title></rect>`).join("");
+  const o = 3.2, tk = 0.6;
+  const dims = `<g class="dimlayer">
+    <path class="dimline" d="M0 ${-o} H${W} M0 ${-o - tk} V${-0.4} M${W} ${-o - tk} V${-0.4} M${-o} 0 V${D} M${-o - tk} 0 H${-0.4} M${-o - tk} ${D} H${-0.4}"/>
+    <text class="dimtext" x="${W / 2}" y="${-o - 0.5}" text-anchor="middle">${fmtFt(W)}</text>
+    <text class="dimtext" x="${-o - 0.5}" y="${D / 2}" text-anchor="middle" transform="rotate(-90 ${-o - 0.5} ${D / 2})">${fmtFt(D)}</text></g>`;
+  planSvgEl.innerHTML = `<defs>
+      <pattern id="g1" width="1" height="1" patternUnits="userSpaceOnUse"><path d="M1 0H0V1" fill="none" stroke="#e6e2d9" stroke-width=".04"/></pattern>
+      <pattern id="g5" width="5" height="5" patternUnits="userSpaceOnUse"><path d="M5 0H0V5" fill="none" stroke="#c9cfe6" stroke-width=".09"/></pattern></defs>
+    <g class="gridlayer"><rect x="${-big}" y="${-big}" width="${big * 2}" height="${big * 2}" fill="url(#g1)"/><rect x="${-big}" y="${-big}" width="${big * 2}" height="${big * 2}" fill="url(#g5)"/></g>
+    ${inner.replace('<g class="p-labels">', `<g class="p-fur">${fur}</g><g class="p-labels">`)}${dims}<g class="tape" id="tape"></g>`;
+  // fit the footprint (plus room for the dimension strings) to the view
+  const r = planSvgEl.getBoundingClientRect(), pad = 7, aw = W + pad * 2, ah = D + pad * 2;
+  const s = Math.min(r.width / aw, r.height / ah) || 10;
+  PV.vb = { w: r.width / s, h: r.height / s, x: -pad - (r.width / s - aw) / 2, y: -pad - (r.height / s - ah) / 2 };
+  applyVB();
+  planSvgEl.querySelectorAll(".p-room").forEach((el) => {
+    el.addEventListener("pointerenter", () => { if (tools.measure) return; const rm = roomById(el.dataset.id, layout); el.classList.add("hot"); $("#planHint").textContent = `${rm.name}: ${fmtFt(rm.w)} × ${fmtFt(rm.h)} · ${sqft(rm)} sq ft`; });
+    el.addEventListener("pointerleave", () => { el.classList.remove("hot"); syncTools(); });
+  });
+  syncTools();
+}
+function applyVB() {
+  const { x, y, w, h } = PV.vb;
+  planSvgEl.setAttribute("viewBox", `${x} ${y} ${w} ${h}`);
+  renderRulers();
+}
+const STEPS = [1, 2, 5, 10, 20, 50];
+function renderRulers() {
+  const r = planSvgEl.getBoundingClientRect(); if (!r.width) return;
+  const s = r.width / PV.vb.w; // px per ft
+  const label = STEPS.find((st) => st * s >= 46) ?? 50, minor = s >= 7 ? 1 : label / 5 >= 1 ? label / 5 : 1;
+  const ruler = (from, len, px, horiz) => {
+    let out = "";
+    for (let ft = Math.ceil(from / minor) * minor; ft <= from + len; ft += minor) {
+      const p = (ft - from) * s, isL = Math.abs(ft / label - Math.round(ft / label)) < 1e-6, h = isL ? 10 : 5;
+      out += horiz ? `<line x1="${p}" x2="${p}" y1="24" y2="${24 - h}" stroke="#9a968d" stroke-width="1"/>` : `<line y1="${p}" y2="${p}" x1="28" x2="${28 - h}" stroke="#9a968d" stroke-width="1"/>`;
+      if (isL) out += horiz ? `<text x="${p + 3}" y="11" fill="#6E6B65" font-size="10">${Math.round(ft)}'</text>` : `<text x="3" y="${p - 3}" fill="#6E6B65" font-size="10">${Math.round(ft)}'</text>`;
+    }
+    return `<svg width="${horiz ? px : 28}" height="${horiz ? 24 : px}">${out}</svg>`;
+  };
+  $("#rulerTop").innerHTML = ruler(PV.vb.x, PV.vb.w, r.width, true);
+  $("#rulerLeft").innerHTML = ruler(PV.vb.y, PV.vb.h, r.height, false);
+  // scale bar: the round length closest to ~110 px
+  const L = [1, 2, 5, 10, 20, 50].reduce((a, b) => (Math.abs(b * s - 110) < Math.abs(a * s - 110) ? b : a));
+  const w = L * s;
+  $("#scaleBar").innerHTML = `<svg width="${w + 2}" height="10"><rect x="1" y="2" width="${w / 2}" height="6" fill="#151515"/><rect x="${1 + w / 2}" y="2" width="${w / 2}" height="6" fill="#fff" stroke="#151515" stroke-width="1"/></svg>`
+    + `<div style="display:flex;justify-content:space-between;width:${w + 2}px"><span>0</span><span>${L} ft</span></div>${tools.grid ? "<div>1 square = 1 ft</div>" : ""}`;
+}
+function toPlan(e) {
+  const r = planSvgEl.getBoundingClientRect();
+  return { x: PV.vb.x + ((e.clientX - r.left) / r.width) * PV.vb.w, y: PV.vb.y + ((e.clientY - r.top) / r.height) * PV.vb.h };
+}
+planSvgEl.addEventListener("wheel", (e) => {
+  e.preventDefault();
+  const p = toPlan(e), f = Math.exp(e.deltaY * 0.0015), vb = PV.vb;
+  const nw = Math.min(400, Math.max(6, vb.w * f)), k = nw / vb.w;
+  PV.vb = { x: p.x - (p.x - vb.x) * k, y: p.y - (p.y - vb.y) * k, w: nw, h: vb.h * k };
+  applyVB();
+}, { passive: false });
+let panFrom = null, tapeFrom = null;
+const snap = (v, e) => (e.shiftKey ? v : Math.round(v * 2) / 2);
+function clearTape() { const t = $("#tape"); if (t) t.innerHTML = ""; }
+function drawTape(a, b) {
+  const d = Math.hypot(b.x - a.x, b.y - a.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+  const ang = Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI, up = ang > 90 || ang < -90 ? ang + 180 : ang;
+  $("#tape").innerHTML = `<line x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}"/><circle cx="${a.x}" cy="${a.y}" r=".22"/><circle cx="${b.x}" cy="${b.y}" r=".22"/>`
+    + `<text x="${mx}" y="${my - 0.5}" text-anchor="middle" transform="rotate(${up} ${mx} ${my})">${fmtFt(Math.round(d * 12) / 12)}</text>`;
+  $("#planHint").textContent = `${fmtFt(Math.round(d * 12) / 12)} · Δ ${fmtFt(Math.abs(Math.round((b.x - a.x) * 12) / 12))} × ${fmtFt(Math.abs(Math.round((b.y - a.y) * 12) / 12))}`;
+}
+planSvgEl.addEventListener("pointerdown", (e) => {
+  try { planSvgEl.setPointerCapture(e.pointerId); } catch { /* synthetic or already-released pointer */ }
+  const p = toPlan(e);
+  if (tools.measure) { tapeFrom = { x: snap(p.x, e), y: snap(p.y, e) }; drawTape(tapeFrom, tapeFrom); }
+  else { panFrom = { x: e.clientX, y: e.clientY, vb: { ...PV.vb } }; planSvgEl.classList.add("panning"); }
+});
+planSvgEl.addEventListener("pointermove", (e) => {
+  if (tapeFrom) { const p = toPlan(e); drawTape(tapeFrom, { x: snap(p.x, e), y: snap(p.y, e) }); return; }
+  if (!panFrom) return;
+  const r = planSvgEl.getBoundingClientRect(), s = r.width / panFrom.vb.w;
+  PV.vb = { ...panFrom.vb, x: panFrom.vb.x - (e.clientX - panFrom.x) / s, y: panFrom.vb.y - (e.clientY - panFrom.y) / s };
+  applyVB();
+});
+planSvgEl.addEventListener("pointerup", () => { panFrom = null; tapeFrom = null; planSvgEl.classList.remove("panning"); });
+addEventListener("resize", () => { if (tools.view === "plan") renderPlan(); });
+
 // dev-only handle for automated checks (stripped from production builds)
 if (process.env.NODE_ENV !== "production") window.__build = { THREE, camera, get furn() { return furn; }, get layout() { return layout; }, canvas };
 }
