@@ -1,0 +1,1269 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>build — Exploded axon</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  /* Tokens: logo blue, paper, ink, white. One family: Inter Tight. */
+  :root {
+    --blue: #2B45F5; --blue-2: #3a54ff; --blue-3: #6b7fff; --blue-d: #1a2cb8;
+    --ink: #151515; --paper: #F6F5F1; --white: #ffffff;
+    --line: rgba(21, 21, 21, .14);
+    --hdr: 76px; --rail: 30vw; --panel: clamp(380px, 32vw, 500px);
+    --gut: clamp(16px, 2.4vw, 36px);
+    --ease: cubic-bezier(.7, 0, .2, 1);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: "Inter Tight", system-ui, sans-serif; background: var(--paper); color: var(--ink);
+    overflow: hidden; transition: background-color .7s var(--ease), color .7s var(--ease);
+    font-feature-settings: "tnum" 1, "ss01" 1; -webkit-font-smoothing: antialiased;
+  }
+  body[data-state="loading"] { background: var(--blue); color: var(--white); }
+  button, input { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 3px; }
+  body[data-state="loading"] :focus-visible, .panel :focus-visible { outline-color: var(--white); }
+
+  /* ---------- giant logo planes ---------- */
+  .bgmark { position: fixed; pointer-events: none; z-index: 0; transition: transform 1.1s var(--ease), opacity .8s; }
+  .bgmark path { transition: fill .7s; }
+  #markA { height: 132vh; right: -26vw; top: -6vh; }
+  #markA path { fill: var(--blue); }
+  body[data-state="loading"] #markA { transform: translate(-58vw, 24vh) scale(1.25) rotate(-8deg); }
+  body[data-state="loading"] #markA path { fill: var(--blue-2); }
+  body[data-state="result"] #markA, body[data-state="walk"] #markA { transform: translate(40vw, 0); opacity: 0; }
+
+  /* ---------- header ---------- */
+  header.top {
+    position: fixed; inset: 0 0 auto 0; height: var(--hdr); z-index: 30;
+    display: flex; align-items: center; justify-content: space-between; padding: 0 var(--gut);
+    pointer-events: none;
+  }
+  header.top > * { pointer-events: auto; }
+  .lockup { display: inline-flex; align-items: flex-end; gap: 2px; text-decoration: none; color: var(--ink); line-height: 1; }
+  .lockup svg { color: var(--blue); transition: color .7s; }
+  .lockup span { font-weight: 600; font-size: 31px; letter-spacing: -0.035em; margin-bottom: -2px; transition: color .7s; }
+  body[data-state="loading"] .lockup svg, body[data-state="loading"] .lockup span { color: var(--white); }
+  .hdr-right { display: flex; align-items: center; gap: 20px; font-size: 14px; font-weight: 500; }
+  .hdr-right a { color: inherit; text-decoration: none; border-bottom: 1px solid currentColor; padding-bottom: 1px; }
+  body[data-state="landing"] .hdr-right { color: var(--ink); }
+  body[data-state="result"] .hdr-right, body[data-state="walk"] .hdr-right { display: none; }
+  #timer { font-variant-numeric: tabular-nums; font-weight: 600; font-size: 15px; display: none; min-width: 7ch; text-align: right; }
+  body[data-state="loading"] #timer { display: block; }
+  body[data-state="loading"] .hdr-right a { display: none; }
+
+  /* ---------- stage (one canvas, moves between states) ---------- */
+  #stage {
+    position: fixed; z-index: 5; left: 46vw; right: 230px; top: 0; bottom: 0;
+    transition: left .9s var(--ease), right .9s var(--ease), top .9s var(--ease), bottom .9s var(--ease);
+  }
+  body[data-state="loading"] #stage { left: var(--rail); right: 200px; top: 190px; bottom: 256px; }
+  body[data-state="result"] #stage { left: 0; right: calc(var(--panel) - 40px); top: var(--hdr); bottom: 0; }
+  body[data-state="walk"] #stage { left: 0; right: 0; top: 0; bottom: 0; z-index: 60; transition: none; }
+  #gl { position: absolute; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+  /* clouds drift past the canvas edge: fade the sides instead of a hard cut (not in walk mode) */
+  body:not([data-state="walk"]) #gl {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent), linear-gradient(180deg, transparent, #000 9%);
+    mask-image: linear-gradient(90deg, transparent, #000 7%, #000 93%, transparent), linear-gradient(180deg, transparent, #000 9%);
+    -webkit-mask-composite: source-in; mask-composite: intersect;
+  }
+  #lines, #labels { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  #lines { width: 100%; height: 100%; }
+  #lines line { stroke: var(--ink); stroke-width: 1; }
+  #lines circle { fill: var(--ink); }
+  body[data-state="loading"] #lines line { stroke: var(--white); }
+  body[data-state="loading"] #lines circle { fill: var(--white); }
+  body[data-state="landing"] .tag.layer { background: var(--ink); color: var(--white); padding: 5px 8px 6px; }
+  .tag {
+    position: absolute; transform: translate(-100%, -50%); white-space: nowrap; font-size: 13px; line-height: 1.15;
+    padding: 5px 8px 6px; background: var(--ink); color: var(--white); font-weight: 500; transition: opacity .3s;
+  }
+  .tag b { font-weight: 600; display: block; }
+  .tag small { font-size: 11px; opacity: .7; }
+  body[data-state="loading"] .tag { background: var(--white); color: var(--ink); }
+  .tag.layer { background: transparent; color: var(--white); padding: 0 0 0 10px; font-size: 14px; transform: translate(0, -50%); }
+  body[data-state="result"] .tag.layer { color: var(--ink); }
+  body[data-state="result"] #lines .ly line { stroke: var(--ink); }
+  #arrow { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+  #arrow path { fill: none; stroke: var(--white); stroke-width: 3; stroke-linecap: square; }
+  #arrow polygon { fill: var(--white); }
+
+  /* plan overlay (result "Plan" view) */
+  #plan {
+    position: absolute; inset: 0; background: var(--paper); display: grid; place-items: center; padding: 6%;
+    opacity: 0; pointer-events: none; transition: opacity .45s var(--ease);
+  }
+  #plan.on { opacity: 1; pointer-events: auto; }
+  #plan svg { width: 100%; height: 100%; max-height: 100%; }
+  .plan-svg .p-room { fill: var(--white); }
+  .plan-svg .p-room[data-type="living"], .plan-svg .p-room[data-type="kitchen"], .plan-svg .p-room[data-type="dining"] { fill: var(--blue); }
+  .plan-svg .p-room[data-type="bathroom"], .plan-svg .p-room[data-type="laundry"] { fill: #d9d7d0; }
+  .plan-svg .p-room[data-type="hall"] { fill: #ecebe6; }
+  .plan-svg .p-wall { stroke: var(--ink); stroke-width: .45; stroke-linecap: square; }
+  .plan-svg .p-wall.ext { stroke-width: .7; }
+  .plan-svg .p-win { stroke: var(--blue-3); stroke-width: .9; }
+  .plan-svg .p-door { fill: none; stroke: var(--ink); stroke-width: .3; }
+  .plan-svg .p-label text { font-family: "Inter Tight", sans-serif; font-size: 1.15px; font-weight: 600; fill: var(--ink); letter-spacing: -0.02em; }
+  .plan-svg .p-label .p-dim { font-size: .85px; font-weight: 400; opacity: .7; }
+  #plan .plan-svg [data-type="living"] ~ * {}
+  #plan .p-label[data-room="living"] text, #plan .p-label[data-room="kitchen"] text, #plan .p-label[data-room="dining"] text { fill: var(--white); }
+
+  /* ---------- views ---------- */
+  .view { position: fixed; inset: 0; z-index: 10; pointer-events: none; opacity: 0; visibility: hidden; transition: opacity .5s var(--ease), visibility 0s .5s; }
+  .view.on { opacity: 1; visibility: visible; transition: opacity .6s var(--ease) .15s, visibility 0s; }
+  .view .hit { pointer-events: auto; }
+
+  /* landing */
+  .land { position: absolute; left: var(--gut); top: calc(var(--hdr) + 5vh); width: min(48vw, 780px); }
+  .land h1 {
+    font-weight: 700; font-size: clamp(54px, 7.6vw, 136px); line-height: .86; letter-spacing: -0.055em;
+    margin-left: -0.04em;
+  }
+  .land h1 span { display: block; }
+  .land h1 span:nth-child(2) { padding-left: 1.1em; }
+  .land p.lede { font-size: clamp(17px, 1.35vw, 21px); line-height: 1.42; max-width: 33em; margin-top: 4.2vh; color: #3b3a37; }
+  form.ask { margin-top: 4vh; max-width: 640px; }
+  form.ask label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+  .ask-row { display: flex; border: 2px solid var(--ink); background: var(--white); }
+  .ask-row input { flex: 1; min-width: 0; border: 0; padding: 18px 18px; font-size: 18px; background: transparent; outline: none; }
+  .ask-row:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
+  .ask-row button {
+    border: 0; background: var(--ink); color: var(--white); padding: 0 26px; font-size: 17px; font-weight: 600; cursor: pointer;
+    transition: background .2s;
+  }
+  .ask-row button:hover { background: var(--blue); }
+  .examples { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .examples button {
+    border: 1px solid var(--line); background: transparent; padding: 7px 12px; font-size: 14px; cursor: pointer; border-radius: 999px;
+  }
+  .examples button:hover { border-color: var(--ink); }
+  .fine { margin-top: 3.2vh; font-size: 14px; color: #6b6862; max-width: 40em; line-height: 1.45; }
+
+  /* loading */
+  .rail { position: absolute; left: var(--gut); top: calc(var(--hdr) + 40px); width: calc(var(--rail) - var(--gut) * 2); }
+  .rail ol { list-style: none; }
+  .rail ol > li {
+    display: grid; grid-template-columns: 2.2em 1fr; align-items: baseline; gap: 4px;
+    font-size: 19px; font-weight: 500; padding: 9px 0; border-top: 1px solid rgba(255,255,255,.25);
+    opacity: .45; transition: font-size .55s var(--ease), opacity .4s, padding .55s var(--ease);
+  }
+  .rail ol > li .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+  .rail ol > li.done { opacity: .85; }
+  .rail ol > li.done .num::after { content: " ✓"; font-size: .8em; }
+  .rail ol > li.active { opacity: 1; font-size: clamp(30px, 2.9vw, 50px); font-weight: 700; letter-spacing: -0.035em; line-height: 1; padding: 18px 0 20px; }
+  .rail ol > li.active .num { font-size: .5em; align-self: start; padding-top: .25em; }
+  .program { margin-top: 32px; }
+  .program h3 { font-size: 14px; font-weight: 600; margin-bottom: 10px; opacity: .8; }
+  .program ul { list-style: none; display: flex; flex-wrap: wrap; gap: 6px; }
+  .program li {
+    font-size: 14px; padding: 5px 9px 6px; background: var(--white); color: var(--ink); font-weight: 500;
+    animation: tagIn .45s var(--ease) both;
+  }
+  .program li span { opacity: .55; margin-left: 6px; font-weight: 400; }
+  .program li.placed { background: var(--ink); color: var(--white); }
+  @keyframes tagIn { from { transform: translateY(-14px) scale(.9); opacity: 0; } }
+  .thought-wrap { position: absolute; left: var(--rail); right: var(--gut); top: calc(var(--hdr) + 24px); height: 130px; overflow: hidden; }
+  #thought {
+    font-size: clamp(26px, 3.1vw, 54px); font-weight: 600; letter-spacing: -0.035em; line-height: 1.02; max-width: 21em;
+  }
+  #thought.long { font-size: clamp(22px, 2.3vw, 38px); line-height: 1.06; }
+  #thought.swap { animation: thoughtIn .55s var(--ease) both; }
+  @keyframes thoughtIn { from { transform: translateY(48px); opacity: 0; } }
+  #thought .fixlabel { display: inline-block; background: var(--ink); color: var(--white); padding: 0 .22em .06em; margin-right: .25em; }
+
+  /* split-flap rule board */
+  .board {
+    position: absolute; left: var(--rail); right: 0; bottom: 0; height: 256px; background: var(--ink); color: var(--white);
+    padding: 16px var(--gut) 18px; display: grid; grid-template-columns: 1fr 1fr; column-gap: 32px; align-content: start;
+  }
+  .board h3 { grid-column: 1 / -1; font-size: 14px; font-weight: 600; opacity: .6; margin-bottom: 8px; display: flex; justify-content: space-between; }
+  .row { display: grid; grid-template-columns: 1fr 74px; align-items: center; gap: 10px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.1); min-height: 34px; }
+  .row .lbl { font-size: 15px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .35; transition: opacity .3s; }
+  .row.seen .lbl { opacity: 1; }
+  .row .msg { grid-column: 1 / -1; font-size: 13px; line-height: 1.3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--ink); background: var(--white); padding: 4px 7px 5px; display: none; }
+  .row.fail .msg { display: block; animation: tagIn .4s var(--ease) both; }
+  .flap {
+    position: relative; height: 26px; perspective: 160px; font-size: 13px; font-weight: 700; text-align: center;
+  }
+  .flap span {
+    position: absolute; inset: 0; display: grid; place-items: center; background: #2a2a2a; color: rgba(255,255,255,.4);
+    transform-origin: 50% 50%; backface-visibility: hidden;
+  }
+  .flap::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,.65); }
+  .flap.flip span { animation: flip .38s var(--ease); }
+  @keyframes flip { 0% { transform: rotateX(0); } 50% { transform: rotateX(-90deg); } 51% { transform: rotateX(90deg); } 100% { transform: rotateX(0); } }
+  .row.pass .flap span { background: var(--blue); color: var(--white); }
+  .row.fail .flap span { background: var(--white); color: var(--ink); }
+  .row.fixed .flap span { background: var(--blue); color: var(--white); box-shadow: inset 0 0 0 2px var(--white); }
+
+  /* result panel */
+  .panel {
+    position: absolute; top: 0; right: 0; bottom: 0; width: var(--panel); background: var(--blue); color: var(--white);
+    clip-path: polygon(48px 0, 100% 0, 100% 100%, 0 100%);
+    padding: 26px var(--gut) 40px 84px; overflow-y: auto; transform: translateX(105%); transition: transform .9s var(--ease);
+  }
+  body[data-state="result"] .panel { transform: none; }
+  .panel-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 14px; font-weight: 500; }
+  .panel-top a { color: inherit; }
+  .btn-ghost { border: 1px solid rgba(255,255,255,.55); background: transparent; padding: 7px 13px; cursor: pointer; font-size: 14px; font-weight: 600; border-radius: 999px; }
+  .btn-ghost:hover { background: var(--white); color: var(--blue); }
+  .panel h2 { margin-top: 30px; font-size: clamp(24px, 2.1vw, 34px); font-weight: 600; letter-spacing: -0.03em; line-height: 1.05; }
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 16px; margin-top: 26px; padding-top: 18px; border-top: 2px solid var(--white); }
+  .stat b { display: block; font-size: clamp(46px, 4.2vw, 72px); font-weight: 700; letter-spacing: -0.055em; line-height: .9; font-variant-numeric: tabular-nums; }
+  .stat span { font-size: 14px; font-weight: 500; opacity: .85; }
+  .stat.wide { grid-column: 1 / -1; }
+  .seg { display: grid; grid-template-columns: repeat(4, 1fr); margin-top: 28px; border: 2px solid var(--white); }
+  .seg button { border: 0; background: transparent; padding: 10px 6px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .seg button + button { border-left: 2px solid var(--white); }
+  .seg button[aria-pressed="true"] { background: var(--white); color: var(--blue); }
+  .walk-btn {
+    display: flex; width: 100%; justify-content: space-between; align-items: center; margin-top: 12px;
+    background: var(--ink); color: var(--white); border: 0; padding: 18px 20px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; cursor: pointer;
+  }
+  .walk-btn small { font-size: 13px; font-weight: 500; opacity: .65; }
+  .walk-btn:hover { background: var(--white); color: var(--ink); }
+  .panel h3 { font-size: 15px; font-weight: 600; margin: 30px 0 8px; }
+  .rules { list-style: none; }
+  .rules li { display: grid; grid-template-columns: 22px 1fr; font-size: 15px; line-height: 1.35; padding: 6px 0; border-top: 1px solid rgba(255,255,255,.22); }
+  .rules li::before { content: "✓"; font-weight: 700; }
+  details.round { margin-top: 10px; background: rgba(0,0,0,.18); }
+  details.round summary { cursor: pointer; padding: 10px 12px; font-size: 15px; font-weight: 600; list-style-position: inside; }
+  details.round div { padding: 0 12px 12px; font-size: 14px; line-height: 1.45; }
+  details.round p + p { margin-top: 8px; }
+  details.round em { font-style: normal; font-weight: 600; }
+  form.edit { display: flex; border: 2px solid var(--white); }
+  form.edit input { flex: 1; min-width: 0; background: transparent; border: 0; padding: 12px; font-size: 16px; outline: none; }
+  form.edit input::placeholder { color: rgba(255,255,255,.6); }
+  form.edit button { border: 0; background: var(--white); color: var(--blue); font-weight: 700; padding: 0 16px; cursor: pointer; font-size: 15px; }
+  #editNote { font-size: 14px; margin-top: 8px; min-height: 1.4em; }
+  #editNote .ex { border: 1px solid rgba(255,255,255,.6); background: transparent; border-radius: 999px; padding: 3px 10px; margin: 6px 4px 0 0; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #editNote .ex:hover { background: var(--white); color: var(--blue); }
+  form.edit button:disabled, form.edit input:disabled { opacity: .55; cursor: progress; }
+  .stat b i { font-style: normal; font-size: .42em; margin-left: .06em; letter-spacing: 0; font-weight: 600; }
+
+  /* room dioramas: DOM-pinned 3D minis (rendered by one shared canvas above the panel) */
+  .rooms3d { margin-top: 28px; }
+  .rooms3d h3 { margin-top: 0; }
+  .feature { border: 2px solid var(--white); background: rgba(0, 0, 0, .16); }
+  .feature .stage3d { aspect-ratio: 16 / 9; }
+  /* caption sits under the 3D area: the minis canvas draws above the panel, so nothing may overlap it */
+  .feature figcaption { background: var(--white); color: var(--blue); padding: 7px 10px 8px; line-height: 1.1; }
+  .feature figcaption b { display: block; font-size: 20px; font-weight: 700; letter-spacing: -0.03em; }
+  .feature figcaption small { font-size: 12px; font-weight: 500; }
+  .room-strip { display: flex; gap: 8px; overflow-x: auto; margin-top: 10px; padding-bottom: 8px; scroll-snap-type: x proximity; scrollbar-width: thin; }
+  .room-pill { flex: 0 0 96px; scroll-snap-align: start; border: 2px solid rgba(255, 255, 255, .45); background: transparent; padding: 0; cursor: pointer; text-align: left; }
+  .room-pill .thumb { display: block; height: 62px; }
+  .room-pill span { display: block; font-size: 12px; font-weight: 600; padding: 4px 6px 5px; border-top: 2px solid rgba(255, 255, 255, .45); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .room-pill:hover { border-color: var(--white); }
+  .room-pill[aria-pressed="true"] { border-color: var(--white); background: rgba(255, 255, 255, .12); }
+  .room-pill[aria-pressed="true"] span { background: var(--white); color: var(--blue); border-top-color: var(--white); }
+  .room-pill.changed span::after { content: " (edited)"; font-weight: 500; }
+
+  /* drag & drop: hint chip + drop toast (result view) */
+  #dragHint {
+    position: absolute; left: var(--gut); bottom: 18px; z-index: 3; display: none; pointer-events: none;
+    background: var(--ink); color: var(--white); font-size: 13px; font-weight: 600; padding: 8px 12px 9px; letter-spacing: -0.005em;
+  }
+  #dragHint b { background: var(--white); color: var(--ink); padding: 0 5px; margin: 0 2px; font-weight: 700; }
+  body[data-state="result"] #dragHint.on { display: block; animation: tagIn .45s var(--ease) both; }
+  #toast {
+    position: absolute; left: 50%; top: 18px; z-index: 3; pointer-events: none; white-space: nowrap;
+    background: var(--blue); color: var(--white); font-weight: 700; font-size: 19px; letter-spacing: -0.025em; line-height: 1.1;
+    padding: 9px 16px 11px; box-shadow: 6px 6px 0 var(--ink); opacity: 0; transform: translate(-50%, -24px);
+    transition: transform .5s var(--ease), opacity .3s;
+  }
+  #toast small { display: block; font-size: 12px; font-weight: 500; opacity: .85; letter-spacing: 0; }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+
+  /* graphic cloud wipe between states */
+  #wipe { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 95; pointer-events: none; display: none; }
+
+  /* walk HUD */
+  .hud { position: fixed; inset: 0; z-index: 70; pointer-events: none; display: none; color: var(--white); }
+  body[data-state="walk"] .hud { display: block; }
+  .hud .room {
+    position: absolute; left: var(--gut); top: 22px; font-size: clamp(30px, 4vw, 60px); font-weight: 700; letter-spacing: -0.045em;
+    background: var(--blue); padding: 2px 14px 8px; line-height: 1;
+  }
+  .hud .help { position: absolute; left: var(--gut); bottom: 22px; background: var(--ink); padding: 9px 13px; font-size: 14px; font-weight: 500; }
+  .hud .leave { position: absolute; right: var(--gut); top: 22px; pointer-events: auto; background: var(--white); color: var(--ink); border: 0; padding: 11px 16px; font-weight: 700; font-size: 15px; cursor: pointer; }
+  .hud .mini { position: absolute; right: var(--gut); bottom: 22px; width: min(280px, 40vw); background: var(--paper); padding: 8px; border: 2px solid var(--ink); }
+  .hud .mini svg { width: 100%; display: block; }
+  .mini .p-label { display: none; }
+  .mini .me { fill: var(--blue); stroke: var(--white); stroke-width: .35; }
+  .mini .heading { stroke: var(--blue); stroke-width: .6; stroke-linecap: round; }
+  .crosshair { position: absolute; left: 50%; top: 50%; width: 10px; height: 10px; margin: -5px 0 0 -5px; border: 2px solid var(--white); border-radius: 50%; mix-blend-mode: difference; }
+
+  /* ---------- small screens ---------- */
+  @media (max-width: 860px) {
+    :root { --hdr: 64px; --rail: 0px; --panel: 100vw; }
+    body { overflow: hidden; }
+    #markA { height: 44vh; right: -12vw; top: 6vh; }
+    .tag.layer, #lines .ly { display: none !important; }
+    #stage, body[data-state="loading"] #stage { left: 0; right: 0; top: var(--hdr); bottom: 52vh; }
+    body[data-state="result"] #stage { left: 0; right: 0; top: var(--hdr); bottom: 52vh; }
+    .land { top: 49vh; left: var(--gut); right: var(--gut); width: auto; bottom: 0; overflow-y: auto; padding-bottom: 24px; }
+    .land h1 { font-size: clamp(40px, 12vw, 64px); }
+    .land p.lede { margin-top: 14px; font-size: 16px; }
+    form.ask { margin-top: 16px; }
+    .fine { display: none; }
+    .rail { top: 49vh; left: var(--gut); right: var(--gut); width: auto; }
+    .rail ol > li:not(.active) { display: none; }
+    .rail ol > li.active { font-size: 28px; padding: 8px 0; border: 0; }
+    .program { display: none; }
+    .thought-wrap { top: calc(49vh + 58px); left: var(--gut); height: 110px; }
+    #thought { font-size: 22px; }
+    .board { left: 0; height: 30vh; grid-template-columns: 1fr; overflow: hidden; }
+    .row:nth-of-type(n+6) { display: none; }
+    .panel { top: 48vh; clip-path: none; padding: 18px var(--gut) 40px; transform: translateY(105%); }
+    body[data-state="result"] .panel { transform: none; }
+    .tag { font-size: 11px; }
+    .hud .mini { width: 46vw; }
+    #dragHint { font-size: 11px; bottom: 10px; }
+    #toast { font-size: 15px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body data-state="landing">
+<svg id="markA" class="bgmark" viewBox="0 0 273 280" aria-hidden="true"><path id="markPath" /></svg>
+
+<header class="top">
+  <a class="lockup" href="../index.html" aria-label="build — all design directions"></a>
+  <div class="hdr-right"><a href="../index.html">All directions</a><span id="timer">0.0 s</span></div>
+</header>
+
+<div id="stage">
+  <canvas id="gl" aria-label="3D model of the generated house"></canvas>
+  <svg id="lines"></svg>
+  <div id="labels"></div>
+  <svg id="arrow"></svg>
+  <div id="plan" aria-hidden="true"></div>
+  <div id="dragHint">Drag furniture to move it · <b>R</b> rotates · <b>Esc</b> cancels</div>
+  <div id="toast" role="status" aria-live="polite"></div>
+</div>
+
+<!-- 1. landing -->
+<section class="view on" id="landing" aria-label="Describe your home">
+  <div class="land hit">
+    <h1><span>Describe it.</span><span>We build it.</span><span>Walk in.</span></h1>
+    <p class="lede">Type the house you want in plain English. build plans the rooms, places every wall, checks the plan against seven layout rules, and hands you a 3D house you can walk through at eye height.</p>
+    <form class="ask" id="askForm">
+      <label for="prompt">Describe your home</label>
+      <div class="ask-row"><input id="prompt" name="prompt" autocomplete="off" /><button type="submit">Generate house</button></div>
+      <div class="examples" aria-label="Example prompts">
+        <button type="button">2 bed cottage, big kitchen, reading nook</button>
+        <button type="button">4 bed family home, 2 offices, 2,400 sq ft</button>
+        <button type="button">Studio with a home gym</button>
+      </div>
+    </form>
+    <p class="fine">Under 30 seconds. Every plan passes all seven rules before you see it, so rooms never overlap and every door opens onto somewhere.</p>
+  </div>
+</section>
+
+<!-- 2. loading -->
+<section class="view" id="loading" aria-label="Building your house" aria-live="polite">
+  <nav class="rail" aria-label="Build steps"><ol id="phases"></ol>
+    <div class="program"><h3>Room program</h3><ul id="tags"></ul></div>
+  </nav>
+  <div class="thought-wrap"><p id="thought"></p></div>
+  <div class="board" id="board"><h3><span>Layout rules</span><span id="round">Round 1</span></h3></div>
+</section>
+
+<!-- 3. result -->
+<section class="view" id="result" aria-label="Your house">
+  <aside class="panel hit">
+    <div class="panel-top"><button class="btn-ghost" id="newBtn" type="button">New house</button><a href="../index.html">All directions</a></div>
+    <h2 id="title"></h2>
+    <div class="stats" id="stats"></div>
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" data-view="cutaway" aria-pressed="true" title="Walls cut at 4'6&quot; so you can see the furniture">Cutaway</button>
+      <button type="button" data-view="assembled" aria-pressed="false">Full height</button>
+      <button type="button" data-view="exploded" aria-pressed="false">Exploded</button>
+      <button type="button" data-view="plan" aria-pressed="false">Plan</button>
+    </div>
+    <button class="walk-btn" id="walkBtn" type="button">Walk through <small>WASD + drag</small></button>
+    <div class="rooms3d">
+      <h3>Room by room</h3>
+      <figure class="feature"><div class="stage3d" id="featureStage" role="img" aria-label="3D preview of the selected room"></div><figcaption id="featureCap"></figcaption></figure>
+      <div class="room-strip" id="roomStrip" role="group" aria-label="Choose a room to preview"></div>
+    </div>
+    <h3>Change something</h3>
+    <form class="edit" id="editForm"><input id="editInput" placeholder="Make the kitchen bigger" aria-label="Describe a change" /><button type="submit">Apply edit</button></form>
+    <p id="editNote" aria-live="polite"></p>
+    <h3>All seven rules pass</h3>
+    <ul class="rules" id="rules"></ul>
+    <details class="round" id="roundDetails"><summary>Fix round 1: what changed</summary><div id="roundBody"></div></details>
+  </aside>
+</section>
+
+<canvas id="wipe" aria-hidden="true"></canvas>
+
+<!-- walk HUD -->
+<div class="hud" aria-live="polite">
+  <div class="room" id="hudRoom">Living Room</div>
+  <button class="leave" id="leaveBtn" type="button">Leave walkthrough</button>
+  <div class="crosshair"></div>
+  <div class="help">W A S D to move. Drag to look. Shift to run. Esc to leave.</div>
+  <div class="mini" id="mini"></div>
+</div>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import {
+  LAYOUT, DEFAULT_PROMPT, DEFAULT_PLAN, MARK_PATH, markSVG, RULES, PHASES, buildHouse, buildFurniture, editLayout, buildScript, playScript,
+  createWalker, planSVG, tween, tickTweens, ease, sleep, roomById, sqft, fmtFt, FURNITURE_STYLES, generate as planFor,
+} from "../core/core.js";
+import { enhanceRenderer, fitSun } from "../core/render.js";
+import { createFurnitureDrag } from "../core/interact.js";
+import { addSiteButton } from "../core/site.js";
+import { addPhotorealButton } from "../core/photoreal.js";
+import { createFloatingIsland, createCloudSea, attachParallax, createMiniStage, roomDiorama } from "../core/atmosphere.js";
+
+let KEEP_ARRANGEMENT = null; // furniture the user dragged, carried across edit rebuilds
+const $ = (s) => document.querySelector(s);
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const D = (ms) => (RM ? 1 : ms);
+const setState = (s) => {
+  document.body.dataset.state = s;
+  for (const v of ["landing", "loading", "result"]) $("#" + v).classList.toggle("on", v === s);
+};
+
+// ---------- brand chrome ----------
+$("#markPath").setAttribute("d", MARK_PATH);
+$(".lockup").innerHTML = `${markSVG("currentColor", 30)}<span>uild</span>`;
+$("#prompt").value = DEFAULT_PROMPT;
+document.querySelectorAll(".examples button").forEach((b) => b.addEventListener("click", () => { $("#prompt").value = b.textContent; $("#prompt").focus(); }));
+
+// ---------- three ----------
+const stage = $("#stage"), canvas = $("#gl");
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const scene = new THREE.Scene();
+// filmic pipeline + studio environment (glossy pieces get real reflections), but Neutral tone mapping:
+// it keeps the brand blue and the flat toon fills from going muddy the way ACES would.
+enhanceRenderer(renderer, scene, { exposure: 1.0, envIntensity: 0.6 });
+renderer.toneMapping = THREE.NeutralToneMapping;
+
+const ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, -400, 800);
+const persp = new THREE.PerspectiveCamera(72, 1, 0.1, 400);
+let cam = ortho;
+const ISO = new THREE.Vector3(1, 0.82, 1).normalize();
+const target = new THREE.Vector3(0, 9, 0);
+const VIEW = { size: 126, minW: 100 };
+const controls = new OrbitControls(ortho, canvas);
+controls.enabled = false; controls.enableDamping = true; controls.enablePan = false;
+controls.minZoom = 0.6; controls.maxZoom = 3; controls.maxPolarAngle = 1.35;
+
+const hemi = new THREE.HemisphereLight(0xffffff, 0x9aa4d8, 1.15);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xffffff, 1.9);
+sun.position.set(-30, 90, 45);
+scene.add(sun, sun.target);
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.ShadowMaterial({ opacity: 0.14 }));
+ground.rotation.x = -Math.PI / 2; ground.position.y = -0.3; ground.receiveShadow = true;
+scene.add(ground);
+ground.visible = false; // the floating island is the ground now
+
+// toon look: 3-step ramp, ink edges
+const ramp = new THREE.DataTexture(new Uint8Array([110, 110, 110, 255, 200, 200, 200, 255, 255, 255, 255, 255]), 3, 1);
+ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true;
+const toon = (c, extra = {}) => new THREE.MeshToonMaterial({ color: c, gradientMap: ramp, ...extra });
+const lineInk = new THREE.LineBasicMaterial({ color: 0x151515 });
+const lineWhite = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+const edges = (mesh, mat = lineInk) => mesh.add(new THREE.LineSegments(new THREE.EdgesGeometry(mesh.geometry, 20), mat));
+
+// ---------- site: floating island, exploded into two layers (Site, Ground) ----------
+// Pale-blue lot on a blue band, then ink bedrock. Trees are white/ink toon shapes with ink edges.
+const ISL = { siteGap: 13, groundGap: 30 };
+const islandRoot = new THREE.Group(), siteG = new THREE.Group(), groundG = new THREE.Group();
+islandRoot.add(siteG, groundG); scene.add(islandRoot);
+let island = null, islandKey = "";
+// rebuilt whenever the footprint changes (each generated house gets a lot that fits it)
+function buildIsland(layout) {
+  const { width_ft: W, depth_ft: Dd } = layout.footprint;
+  const { x: ex, y: ey } = layout.entrance;
+  const key = `${W}x${Dd}x${ex}`;
+  if (key === islandKey) return; islandKey = key;
+  for (const g of [siteG, groundG]) { g.traverse((o) => o.geometry?.dispose()); g.clear(); }
+  const isl = createFloatingIsland(W, Dd, {
+    pad: 10, depth: 22, trees: 12, seed: 4, entrance: [ex - W / 2, ey - Dd / 2],
+    grass: 0xd6dbff, grassEdge: 0x2B45F5, dirt: 0x2B45F5, rock: 0x2a2a2a, rockDark: 0x151515,
+    path: 0xffffff, trunk: 0x151515, leaf: [0x151515, 0x2B45F5, 0x151515], shard: 0x151515,
+  });
+  // toon-ify every material, add ink / white edges
+  const { cap, under, props, shards } = isl.parts;
+  isl.group.traverse((o) => {
+    if (!o.isMesh) return;
+    o.material = o.material.vertexColors ? new THREE.MeshToonMaterial({ vertexColors: true, gradientMap: ramp }) : toon(o.material.color.getHex());
+    o.castShadow = o !== under; o.receiveShadow = true;
+  });
+  edges(cap);
+  props.traverse((o) => { if (o.isMesh && o.geometry.type !== "CylinderGeometry") edges(o, o.material.color.getHex() === 0x151515 ? lineWhite : lineInk); });
+  shards.forEach((m) => edges(m, lineWhite));
+  // re-parent: Site = lot cap + lip + path + trees; Ground = rock underside + shards
+  for (const o of [...isl.group.children]) (o === under || shards.includes(o) ? groundG : siteG).add(o);
+  // path stones onto the grass top
+  siteG.children.forEach((o) => { if (o.isMesh && o.geometry.type === "CylinderGeometry") o.position.y = 0.6; });
+  island = isl;
+  // camera framing follows the house size (old default was ~50 ft wide)
+  FIT = Math.max(1, Math.max(W, Dd * 1.2) / 52);
+}
+let FIT = 1;
+buildIsland(LAYOUT);
+// house floor slabs bottom out at -0.25; the cap's top is +0.5 in island space
+const ISLAND_Y = -0.55;
+
+// ---------- clouds: flat graphic puffs, white with a pale-blue belly and an ink outline ----------
+function puffTexture(seed) {
+  const c = document.createElement("canvas"); c.width = 512; c.height = 256;
+  const g = c.getContext("2d");
+  let k = seed * 9301 + 49297; const r = () => ((k = (k * 9301 + 49297) % 233280) / 233280);
+  const base = 196, circles = [];
+  const n = 4 + Math.floor(r() * 3);
+  for (let i = 0; i < n; i++) {
+    const x = 80 + (i / (n - 1)) * 352 + (r() - 0.5) * 30;
+    const rad = 42 + Math.sin((i / (n - 1)) * Math.PI) * (46 + r() * 30);
+    circles.push([x, base - rad * 0.55, rad]);
+  }
+  const shape = (grow) => {
+    g.beginPath();
+    for (const [x, y, rad] of circles) { g.moveTo(x + rad + grow, y); g.arc(x, y, rad + grow, 0, Math.PI * 2); }
+    g.rect(circles[0][0] - grow, base - 40 - grow, circles.at(-1)[0] - circles[0][0] + grow * 2, 40 + grow * 2);
+  };
+  // clip everything to above the flat bottom
+  g.save(); g.beginPath(); g.rect(0, 0, 512, base + 7); g.clip();
+  g.fillStyle = "#151515"; shape(7); g.fill();
+  g.fillStyle = "#ffffff"; shape(0); g.fill();
+  g.save(); shape(0); g.clip(); g.fillStyle = "#d6dbff"; g.fillRect(0, base - 34, 512, 60); g.restore();
+  g.restore();
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.premultiplyAlpha = true;
+  return t;
+}
+const PUFFS = [1, 2, 3].map(puffTexture);
+const clouds = createCloudSea({ count: 34, radius: 170, inner: 46, yMin: -46, yMax: -26, size: [16, 30], color: 0xffffff, shadow: 0xffffff, opacity: 1, drift: 1.6, seed: 8 });
+clouds.puffs.forEach((p, i) => {
+  p.material.map = PUFFS[i % 3]; p.material.premultipliedAlpha = true; p.material.rotation = 0; p.material.needsUpdate = true;
+  p.scale.set(p.scale.y * 2, p.scale.y, 1); // texture is 2:1
+});
+scene.add(clouds.group);
+
+// mouse parallax: tilt + slow sway, read off a dummy object and added to the turntable rotation
+const tiltObj = new THREE.Object3D();
+const parallax = attachParallax(tiltObj, { yaw: 0.14, pitch: 0.035, sway: RM ? 0 : 0.05, swaySpeed: 0.45 });
+if (RM) parallax.enabled = false;
+
+const PUBLIC = new Set(["living", "kitchen", "dining"]);
+const WET = new Set(["bathroom", "laundry"]);
+const floorColor = (t) => (PUBLIC.has(t) ? 0x1a2cb8 : WET.has(t) ? 0x2a2a2a : t === "hall" ? 0xe4e2db : 0xffffff);
+
+const wallMat = toon(0xffffff), winMat = toon(0x6b7fff, { transparent: true, opacity: 0.85 }), doorMat = toon(0x151515);
+// furniture: flat white / ink / blue, same toon ramp as the house
+const FURN = {
+  wood: toon(0xf1efe9), fabric: toon(0x151515), soft: toon(0xffffff), accent: toon(0x2B45F5), dark: toon(0x151515),
+  white: toon(0xffffff), rug: toon(0x8f9cff), metal: toon(0xc9ccd4), glow: toon(0xffffff, { emissive: 0xfff3d6, emissiveIntensity: 0.7 }),
+};
+const ceilMat = toon(0xf6f5f1, { side: THREE.DoubleSide });
+// Colour furniture, in-palette: brand blue + sunflower + coral on white / ink. Bedding changes per bedroom.
+// Architecture stays white/ink/blue; furniture is where the colour lives.
+const STYLE05 = {
+  ...FURNITURE_STYLES.colorful,
+  wood: 0xead7b7, fabric: 0xff6b4a, soft: 0xffffff, accent: 0x2B45F5, accent2: 0xffc23d, accent3: 0x151515,
+  dark: 0x151515, white: 0xffffff, stone: 0xf4f2ec, rug: 0x8f9cff, metal: 0xc9ccd4, glow: 0xfff3d6,
+  art: 0xffc23d, leaf: 0x151515, pot: 0xff6b4a, throw: 0xffc23d, books: 0x2B45F5,
+  perType: {
+    kitchen: { white: 0xffffff, wood: 0xffc23d }, dining: { soft: 0x151515, rug: 0xffffff },
+    bathroom: { accent: 0xffc23d, rug: 0x8f9cff, wood: 0xffffff }, office: { accent3: 0xff6b4a, rug: 0xffc23d },
+    laundry: { accent: 0xffc23d }, closet: { fabric: 0x2B45F5 },
+  },
+  perRoom: {
+    primary_bedroom: { accent: 0x2B45F5, throw: 0xffc23d, art: 0xff6b4a }, bedroom_2: { accent: 0xff6b4a, throw: 0x2B45F5, art: 0x2B45F5 },
+    bedroom_3: { accent: 0xffc23d, throw: 0x151515, art: 0x2B45F5 }, bedroom_4: { accent: 0x2B45F5, throw: 0xff6b4a }, sleep: { accent: 0xff6b4a },
+  },
+};
+const toonCache = {}, glossCache = {};
+const toonOf = (hex) => (toonCache[hex] ??= toon(hex));
+// fridge and stone tops stay physically shaded so the studio environment gives them a real sheen
+const glossOf = (hex, k) => (glossCache[hex + k] ??= new THREE.MeshStandardMaterial({ color: hex, roughness: k === "metal" ? 0.25 : 0.35, metalness: k === "metal" ? 0.6 : 0, envMapIntensity: 1.2 }));
+
+// Exploded-axon layers, bottom to top. Furniture floats between the floor plate and the walls.
+const L = { floor: 0, furniture: 1, walls: 2, windows: 3, doors: 4 };
+const LAYER_GAP = [0, 13, 28, 45, 58];
+let cur = LAYOUT, house = null, furn = null;
+const items = [];
+const itemByRoom = {}, furnByRoom = {};
+const add = (mesh, layer, baseY, roomIds = []) => {
+  const it = { mesh, layer, baseY, drop: 0, ox: 0, oz: 0, bx: mesh.position.x, bz: mesh.position.z, roomIds };
+  items.push(it); return it;
+};
+// rooms whose rectangle this wall segment lies on (used to lift only edited rooms)
+const segRooms = (sg, layout) => layout.rooms.filter((r) => sg.y1 === sg.y2
+  ? (Math.abs(sg.y1 - r.y) < 0.01 || Math.abs(sg.y1 - r.y - r.h) < 0.01) && sg.x2 > r.x + 0.01 && sg.x1 < r.x + r.w - 0.01
+  : (Math.abs(sg.x1 - r.x) < 0.01 || Math.abs(sg.x1 - r.x - r.w) < 0.01) && sg.y2 > r.y + 0.01 && sg.y1 < r.y + r.h - 0.01).map((r) => r.id);
+
+const walkLights = new THREE.Group(); walkLights.visible = false;
+function build(layout) {
+  if (house) { scene.remove(house.group); house.group.traverse((o) => o.geometry?.dispose()); }
+  cur = layout; items.length = 0;
+  for (const k in itemByRoom) delete itemByRoom[k];
+  for (const k in furnByRoom) delete furnByRoom[k];
+  house = buildHouse(layout, {});
+  scene.add(house.group);
+  for (const [id, m] of Object.entries(house.floors)) {
+    m.material = toon(floorColor(m.userData.room.type));
+    m.castShadow = true;
+    edges(m, PUBLIC.has(m.userData.room.type) || WET.has(m.userData.room.type) ? lineWhite : lineInk);
+    itemByRoom[id] = add(m, L.floor, 0, [id]);
+  }
+  for (const m of house.walls) { m.material = wallMat; edges(m); add(m, L.walls, 0, segRooms(m.userData.seg, layout)); }
+  for (const m of house.windows) { m.material = winMat; m.castShadow = true; edges(m, lineInk); add(m, L.windows, 3, [m.userData.roomId]); }
+  for (const m of house.doorFrames) { m.material = doorMat; m.castShadow = true; add(m, L.doors, 7, m.userData.door.between); }
+  house.ceilings.children.forEach((c) => (c.material = ceilMat));
+
+  buildIsland(layout);
+  fitSun(sun, layout.footprint.width_ft * 1.3, layout.footprint.depth_ft * 1.3);
+  furn = buildFurniture(layout, STYLE05, { roundedBox: RoundedBoxGeometry, items: true, arrangement: KEEP_ARRANGEMENT }); KEEP_ARRANGEMENT = null;
+  for (const m of furn.pieces) {
+    const k = m.userData.colorKey, hex = m.material.color.getHex();
+    m.material = k === "glow" ? FURN.glow : k === "metal" || k === "stone" ? glossOf(hex, k) : toonOf(hex);
+    const thin = m.geometry.parameters?.height < 0.1 || m.geometry.type === "RoundedBoxGeometry";
+    if (!thin) edges(m, hex === 0x151515 ? lineWhite : lineInk);
+  }
+  house.group.add(furn.group);
+  drag?.setTarget(furn, layout);
+  for (const [id, g] of Object.entries(furn.byRoom)) furnByRoom[id] = add(g, L.furniture, 0, [id]);
+
+  // warm ceiling lights, only switched on for the walkthrough
+  walkLights.clear();
+  for (const r of layout.rooms) {
+    const c = house.roomCenter(r.id);
+    const pl = new THREE.PointLight(0xfff1dc, r.type === "hall" ? 4 : 8, Math.max(r.w, r.h) * 1.5, 1.6);
+    pl.position.set(c.x, 8.2, c.z); walkLights.add(pl);
+  }
+  house.group.add(walkLights);
+  updateCounts();
+}
+const counts = { pieces: 0, windows: 0, doors: 0, rooms: 0, sqft: 0 };
+function updateCounts() {
+  Object.assign(counts, { pieces: furn.count, windows: cur.windows.length, doors: cur.doors.length, rooms: cur.rooms.length, sqft: cur.rooms.reduce((a, r) => a + r.w * r.h, 0) });
+  for (const Lb of layerLabels ?? []) Lb.refresh?.();
+}
+let layerLabels, drag = null;
+
+// S.cut: 0 = full height, 1 = section cut at 4'6" so furniture reads from above
+const S = { explode: 1, rot: 0, spin: true, cut: 0, iex: 1, rise: 0 }; // iex: island explode, rise: island lift-in
+function applyLayers() {
+  const k = Math.max(0.001, 1 - S.cut);
+  for (const it of items) {
+    let base = it.baseY;
+    if (it.layer === L.walls) it.mesh.scale.y = it.mesh.userData.part === "header" ? k : 1 - 0.5 * S.cut;
+    else if (it.layer === L.windows || it.layer === L.doors) { it.mesh.scale.y = k; base *= k; }
+    it.mesh.position.y = base + LAYER_GAP[it.layer] * S.explode + it.drop;
+    it.mesh.position.x = it.bx + it.ox;
+    it.mesh.position.z = it.bz + it.oz;
+  }
+}
+const layerItems = (n) => items.filter((i) => i.layer === n);
+
+// flash plane when a slab lands
+const flashes = new Set();
+function flash(roomId, color = 0xffffff) {
+  const r = roomById(roomId, cur);
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(r.w, r.h), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false }));
+  m.rotation.x = -Math.PI / 2;
+  const c = house.roomCenter(roomId); const it = itemByRoom[roomId];
+  m.position.set(c.x + it.ox, 0.06, c.z + it.oz);
+  house.group.add(m);
+  tween(D(650), (p) => { m.scale.setScalar(1 + p * 0.35); m.material.opacity = 0.9 * (1 - p); }).then(() => { house.group.remove(m); m.geometry.dispose(); });
+}
+
+// ---------- overlays: leader labels + layer labels ----------
+const linesSvg = $("#lines"), labelsDiv = $("#labels");
+const NS = "http://www.w3.org/2000/svg";
+const leaders = [];
+function makeLeader({ html, world, dx, dy, cls = "", layer = false }) {
+  const g = document.createElementNS(NS, "g"); if (layer) g.setAttribute("class", "ly");
+  const ln = document.createElementNS(NS, "line"), dot = document.createElementNS(NS, "circle");
+  dot.setAttribute("r", 3); g.append(ln, dot); linesSvg.append(g);
+  const el = document.createElement("div"); el.className = "tag " + cls; el.innerHTML = html; labelsDiv.append(el);
+  const L = { g, ln, dot, el, world, dx, dy, opacity: 1, show: true };
+  leaders.push(L); return L;
+}
+function removeLeader(L) { L.g.remove(); L.el.remove(); leaders.splice(leaders.indexOf(L), 1); }
+const _v = new THREE.Vector3();
+function updateLeaders(w, h) {
+  if (w < 2 || h < 2) return;
+  for (const L of leaders) {
+    const vis = L.show && L.opacity > 0.01;
+    L.g.style.display = L.el.style.display = vis ? "" : "none";
+    if (!vis) continue;
+    L.world(_v); house.group.localToWorld(_v); _v.project(cam);
+    const x = ((_v.x + 1) / 2) * w, y = ((1 - _v.y) / 2) * h;
+    const tx = x + L.dx, ty = y + L.dy;
+    L.ln.setAttribute("x1", x); L.ln.setAttribute("y1", y); L.ln.setAttribute("x2", tx); L.ln.setAttribute("y2", ty);
+    L.dot.setAttribute("cx", x); L.dot.setAttribute("cy", y);
+    L.el.style.left = tx + "px"; L.el.style.top = ty + "px";
+    L.g.style.opacity = L.el.style.opacity = L.opacity;
+  }
+}
+// layer labels for the exploded diagram (anchored at the north-west corner of each layer)
+const _c = new THREE.Vector3();
+const Dp = () => cur.footprint.depth_ft, Wd = () => cur.footprint.width_ft;
+const LAYER_TEXT = {
+  [L.doors]: () => ["Door frames", `${counts.doors} openings, 6'8\" clear`],
+  [L.windows]: () => ["Windows", `${counts.windows} panes cut into the walls`],
+  [L.walls]: () => ["Walls", "9 ft, shared where rooms meet"],
+  [L.furniture]: () => ["Furniture", `${counts.pieces} pieces, door swings kept clear`],
+  [L.floor]: () => ["Floor plan", `${counts.rooms} rooms, ${Math.round(counts.sqft).toLocaleString()} sq ft`],
+};
+const LAYER_H = { [L.doors]: 9, [L.windows]: 7, [L.walls]: 9, [L.furniture]: 4, [L.floor]: 0 };
+layerLabels = [L.doors, L.windows, L.walls, L.furniture, L.floor].map((layer) => {
+  const Lb = makeLeader({
+    html: "", cls: "layer", layer: true, dx: 34, dy: -14,
+    // anchor on whichever footprint corner is furthest right on screen, so labels never run into the copy
+    world: (v) => {
+      const y = LAYER_H[layer] + LAYER_GAP[layer] * S.explode;
+      let best = -Infinity, bx = 0, bz = 0;
+      for (const [cx, cz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) {
+        _c.set((cx * Wd()) / 2, y, (cz * Dp()) / 2); house.group.localToWorld(_c); _c.project(cam);
+        if (_c.x > best) { best = _c.x; bx = (cx * Wd()) / 2; bz = (cz * Dp()) / 2; }
+      }
+      return v.set(bx, y, bz);
+    },
+  });
+  Lb.layer = layer;
+  Lb.refresh = () => { const [t, sub] = LAYER_TEXT[layer](); Lb.el.innerHTML = `<b>${t}</b><small>${sub}</small>`; };
+  return Lb;
+});
+// Site + Ground layers hang below the floor plate in the exploded diagram
+const islandLabel = (key, title, sub, y) => {
+  const Lb = makeLeader({
+    html: "", cls: "layer", layer: true, dx: 34, dy: -14,
+    world: (v) => {
+      const yy = y() ; let best = -Infinity, bx = 0, bz = 0;
+      for (let i = 0; i < 12; i++) {
+        const a = (i / 12) * Math.PI * 2, px = Math.cos(a) * island.rx * 0.92, pz = Math.sin(a) * island.rz * 0.92;
+        _c.set(px, yy, pz); house.group.localToWorld(_c); _c.project(cam);
+        if (_c.x > best) { best = _c.x; bx = px; bz = pz; }
+      }
+      return v.set(bx, yy, bz);
+    },
+  });
+  Lb.layer = key; Lb.refresh = () => { Lb.el.innerHTML = `<b>${title}</b><small>${sub()}</small>`; }; Lb.refresh();
+  return Lb;
+};
+layerLabels.push(
+  islandLabel("site", "Site", () => `${Math.round(island.rx * 2)} × ${Math.round(island.rz * 2)} ft lot, trees, a path to the front door`, () => ISLAND_Y + S.rise - ISL.siteGap * S.iex),
+  islandLabel("ground", "Ground", () => "Floating bedrock, nothing to dig", () => ISLAND_Y + S.rise - ISL.groundGap * S.iex - 8),
+);
+const labelFor = (layer) => layerLabels.find((Lb) => Lb.layer === layer);
+build(LAYOUT);
+const setLayerLabels = (on) => layerLabels.forEach((L) => (L.show = on));
+
+// ---------- camera framing ----------
+function camTo({ size, ty }, ms = 900) {
+  const s0 = VIEW.size, t0 = target.y; size *= FIT;
+  return tween(D(ms * 1.15), (p) => { VIEW.size = s0 + (size - s0) * p; target.y = t0 + (ty - t0) * p; }, ease.settle);
+}
+let lastW = 0, lastH = 0;
+function resize() {
+  const w = stage.clientWidth, h = stage.clientHeight;
+  if (w !== lastW || h !== lastH) {
+    lastW = w; lastH = h; renderer.setSize(w, h, false);
+    persp.aspect = w / h; persp.updateProjectionMatrix();
+  }
+  if (w < 2 || h < 2) return [w, h]; // stage collapsed mid-transition: keep the last frustum (avoids NaN projections)
+  const a = w / Math.max(1, h);
+  // keep the whole house in frame on narrow stages: the iso footprint is ~62 ft wide
+  const size = Math.max(VIEW.size, ((VIEW.minW ?? 70) * FIT) / a);
+  ortho.left = (-size * a) / 2; ortho.right = (size * a) / 2; ortho.top = size / 2; ortho.bottom = -size / 2;
+  ortho.updateProjectionMatrix();
+  return [w, h];
+}
+
+// ---------- loop ----------
+let walker = null, last = performance.now();
+const mini = { dot: null, head: null };
+function loop(now) {
+  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  tickTweens(now);
+  if (S.spin && !RM) S.rot += dt * 0.16;
+  const walking = cam === persp;
+  if (!walking && !drag?.dragging) parallax.update(dt);
+  drag?.update(dt);
+  house.group.rotation.set(walking ? 0 : tiltObj.rotation.x, S.rot + (walking ? 0 : tiltObj.rotation.y), 0);
+  islandRoot.rotation.copy(house.group.rotation);
+  islandRoot.position.y = house.group.position.y + ISLAND_Y + S.rise;
+  siteG.position.y = -ISL.siteGap * S.iex; groundG.position.y = -ISL.groundGap * S.iex;
+  island.update(dt); clouds.update(dt);
+  applyLayers();
+  const [w, h] = resize();
+  if (cam === ortho) {
+    if (controls.enabled) controls.update();
+    else { ortho.position.copy(target).addScaledVector(ISO, 160); ortho.lookAt(target); }
+  }
+  if (walker && walker.active) {
+    walker.update(dt);
+    const p = walker.planPos(), r = walker.roomAt();
+    if (r) $("#hudRoom").textContent = r.name;
+    mini.dot.setAttribute("cx", p.x); mini.dot.setAttribute("cy", p.y);
+    mini.head.setAttribute("x1", p.x); mini.head.setAttribute("y1", p.y);
+    mini.head.setAttribute("x2", p.x - Math.sin(p.heading) * 3.2); mini.head.setAttribute("y2", p.y - Math.cos(p.heading) * 3.2);
+  }
+  updateLeaders(w, h);
+  if (document.body.dataset.state === "result") clipMinis();
+  renderer.render(scene, cam);
+  requestAnimationFrame(loop);
+}
+applyLayers();
+requestAnimationFrame(loop);
+
+// ---------- loading: rail, thoughts, tags, board ----------
+$("#phases").innerHTML = PHASES.map((p, i) => `<li data-id="${p.id}"><span class="num">${i + 1}</span><span>${p.label}</span></li>`).join("");
+function setPhase(id) {
+  let hit = false;
+  for (const li of document.querySelectorAll("#phases li")) {
+    const me = li.dataset.id === id;
+    li.classList.toggle("active", me);
+    li.classList.toggle("done", !hit && !me);
+    if (me) hit = true;
+  }
+}
+function setThought(html) {
+  const t = $("#thought"); t.innerHTML = html; t.classList.remove("swap");
+  t.classList.toggle("long", t.textContent.length > 80); void t.offsetWidth; t.classList.add("swap");
+}
+const board = $("#board");
+for (const r of RULES) {
+  board.insertAdjacentHTML("beforeend", `<div class="row" data-rule="${r.id}"><span class="lbl">— — — — — —</span><span class="flap"><span>Wait</span></span><div class="msg"></div></div>`);
+}
+const SCR = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+function scramble(el, text, ms = 520) {
+  const t0 = performance.now();
+  (function f() {
+    const p = RM ? 1 : Math.min(1, (performance.now() - t0) / ms), n = Math.floor(p * text.length);
+    el.textContent = text.slice(0, n) + [...text.slice(n)].map((c) => (c === " " ? " " : SCR[(Math.random() * SCR.length) | 0])).join("");
+    if (p < 1) requestAnimationFrame(f);
+  })();
+}
+function flapTo(row, text) {
+  const f = row.querySelector(".flap"); f.classList.remove("flip"); void f.offsetWidth; f.classList.add("flip");
+  setTimeout(() => (f.querySelector("span").textContent = text), RM ? 0 : 190);
+}
+function resetBoard() {
+  for (const row of board.querySelectorAll(".row")) {
+    row.className = "row"; row.querySelector(".lbl").textContent = "— — — — — —";
+    row.querySelector(".flap span").textContent = "Wait"; row.querySelector(".msg").textContent = "";
+  }
+  $("#round").textContent = "Round 1";
+}
+const failures = [];
+function onCheck(e) {
+  const row = board.querySelector(`[data-rule="${e.rule}"]`);
+  const rule = RULES.find((r) => r.id === e.rule);
+  if (!row.classList.contains("seen")) { row.classList.add("seen"); scramble(row.querySelector(".lbl"), rule.label); }
+  if (e.pass) {
+    const wasFail = row.classList.contains("fail");
+    row.classList.remove("fail"); row.classList.add(wasFail ? "fixed" : "pass");
+    flapTo(row, wasFail ? "Fixed" : "Pass");
+  } else {
+    row.classList.add("fail"); flapTo(row, "Fail");
+    row.querySelector(".msg").textContent = e.message;
+    failures.push({ rule: rule.label, message: e.message });
+    setThought(`<span class="fixlabel">Fails</span>${e.message}`);
+    for (const id of reflowIds) if (itemByRoom[id]) flash(id, 0x151515);
+  }
+  if (e.round) $("#round").textContent = "Round " + e.round;
+}
+
+// ---------- the build ----------
+const roomLeaders = {};
+function placeRoom(id) {
+  const it = itemByRoom[id]; const r = roomById(id, cur);
+  if (id === detachId) it.oz = 7.5; // first pass: this room lands in the wrong slot, the checker catches it
+  it.mesh.visible = true;
+  tween(D(760), (p) => (it.drop = 46 * (1 - p)), ease.drop).then(() => flash(id));
+  // on phones labels always hang below the slab so they never cover the header
+  const north = r.y + r.h / 2 < cur.footprint.depth_ft / 2 && stage.clientWidth > 600, i = Object.keys(roomLeaders).length;
+  // north row rooms are narrow and side by side: stack their labels in three tiers so they never overlap
+  roomLeaders[id] = makeLeader({
+    html: `<b>${r.name}</b><small>${fmtFt(r.w)} × ${fmtFt(r.h)}, ${sqft(r)} sq ft</small>`,
+    dx: north ? -24 : 40 + (i % 2) * 20, dy: north ? -34 - (i % 3) * 44 : 34 + (i % 2) * 44,
+    world: (v) => { const c = house.roomCenter(id); return v.set(c.x + it.ox, it.drop, c.z + it.oz); },
+  });
+  roomLeaders[id].el.style.transform = north ? "translate(-100%, -100%)" : "translate(0, 0)";
+  // keep the three most recent leaders readable; older ones fade out
+  Object.values(roomLeaders).slice(0, -3).forEach((L) => (L.opacity = 0));
+  const tag = [...document.querySelectorAll("#tags li")].find((li) => li.dataset.id === id);
+  tag?.classList.add("placed");
+}
+function drawArrow(from, to) {
+  const svg = $("#arrow");
+  const len = Math.hypot(to.x - from.x, to.y - from.y);
+  svg.innerHTML = `<path d="M${from.x} ${from.y} L${to.x} ${to.y}" stroke-dasharray="${len}" stroke-dashoffset="${len}"/>`;
+  const path = svg.querySelector("path");
+  tween(D(520), (p) => path.setAttribute("stroke-dashoffset", len * (1 - p)));
+  setTimeout(() => (svg.innerHTML = ""), D(1500));
+}
+function project(v3) {
+  const v = v3.clone(); house.group.localToWorld(v); v.project(cam);
+  return { x: ((v.x + 1) / 2) * stage.clientWidth, y: ((1 - v.y) / 2) * stage.clientHeight };
+}
+function onFix(e) {
+  setThought(`<span class="fixlabel">Fix round ${e.round}</span>${e.note}`);
+  const it = itemByRoom[detachId]; if (!it) return;
+  const c = house.roomCenter(detachId);
+  drawArrow(project(new THREE.Vector3(c.x, 1, c.z + it.oz)), project(new THREE.Vector3(c.x, 1, c.z)));
+  const o0 = it.oz;
+  tween(D(1000), (p) => (it.oz = o0 * (1 - p)), ease.spring, D(250)).then(() => reflowIds.forEach((id) => itemByRoom[id] && flash(id)));
+}
+async function raise() {
+  for (const Lb of Object.values(roomLeaders)) { const o0 = Lb.opacity; tween(D(400), (p) => (Lb.opacity = o0 * (1 - p))); }
+  camTo({ size: 112, ty: 22 }, 650);
+  const lift = (arr, ms, stagger) => arr.forEach((it, i) => {
+    it.mesh.visible = true; it.drop = 60;
+    tween(D(ms * 1.35), (p) => (it.drop = 60 * (1 - p)), ease.settle, D(i * stagger));
+  });
+  setLayerLabels(true); layerLabels.forEach((Lb) => (Lb.opacity = 0));
+  labelFor(L.walls).opacity = 1;
+  lift(layerItems(L.walls), 520, 10);
+  await sleep(D(720));
+  labelFor(L.windows).opacity = 1; lift(layerItems(L.windows), 420, 25); await sleep(D(420));
+  labelFor(L.doors).opacity = 1; lift(layerItems(L.doors), 420, 18); await sleep(D(460));
+  tween(D(380), (p) => layerLabels.forEach((Lb) => (Lb.opacity = 1 - p)), ease.outCubic, D(300));
+  camTo({ size: 80, ty: -2 }, 950);
+  await tween(D(1050), (p) => (S.explode = 1 - p), ease.inOutCubic);
+  // the snap: a short thud and a white flash across every room
+  tween(D(260), (p) => (house.group.position.y = -0.7 * Math.sin(p * Math.PI)));
+  for (const id of Object.keys(itemByRoom)) flash(id);
+}
+
+// furnish: each room's pieces fall from the furniture layer into the finished shell
+let furnishing = Promise.resolve();
+function furnishRoom(id) {
+  const it = furnByRoom[id]; if (!it) return;
+  const n = it.mesh.children.length; it.mesh.visible = true; if (!n) return;
+  it.drop = 0;
+  // each piece falls on its own, big pieces first, with a weighty two-bounce landing
+  const kids = [...it.mesh.children].sort((a, b) => (b.userData.collide ? 1 : 0) - (a.userData.collide ? 1 : 0));
+  kids.forEach((g) => (g.position.y = 26));
+  furnishing = Promise.all(kids.map((g, i) => tween(D(820), (p) => (g.position.y = 26 * (1 - p)), ease.drop, D(i * 70))));
+  const r = roomById(id, cur), north = r.y + r.h / 2 < cur.footprint.depth_ft / 2 && stage.clientWidth > 600, k = Object.keys(roomLeaders).filter((x) => x.startsWith("f:")).length;
+  const Lb = makeLeader({
+    html: `<b>${r.name}</b><small>${n} item${n > 1 ? "s" : ""}: ${[...new Set(it.mesh.children.map((c) => c.userData.name))].filter((x) => !/back|top|tank|arm$|counter$|^art$|towel/.test(x)).slice(0, 3).join(", ")}</small>`,
+    dx: north ? -24 : 36, dy: north ? -34 - (k % 2) * 48 : 30 + (k % 2) * 48,
+    world: (v) => { const c = house.roomCenter(id); return v.set(c.x, it.drop + 2, c.z); },
+  });
+  Lb.el.style.transform = north ? "translate(-100%, -100%)" : "translate(0, 0)";
+  roomLeaders["f:" + id] = Lb;
+  Object.entries(roomLeaders).filter(([x]) => x.startsWith("f:")).slice(0, -2).forEach(([, o]) => (o.opacity = 0));
+}
+
+let run = null, raising = Promise.resolve(), timerRAF = 0, prompt = DEFAULT_PROMPT;
+function resetHouse(visible) {
+  for (const it of items) { it.mesh.visible = visible; it.drop = 0; it.ox = 0; it.oz = 0; }
+  for (const g of furn.items) g.position.y = 0;
+  for (const Lb of Object.values(roomLeaders)) removeLeader(Lb);
+  for (const k in roomLeaders) delete roomLeaders[k];
+}
+function startTimer() {
+  const t0 = performance.now();
+  const f = () => { $("#timer").textContent = ((performance.now() - t0) / 1000).toFixed(1) + " s"; timerRAF = requestAnimationFrame(f); };
+  f();
+}
+let plan = DEFAULT_PLAN, reflowIds = ["kitchen", "dining"], detachId = "dining";
+function generate(text) {
+  prompt = text.trim() || DEFAULT_PROMPT;
+  failures.length = 0; fixNote = "";
+  // every prompt gets its own house: plan it, then rebuild the house, island and plans from it
+  plan = prompt === DEFAULT_PROMPT ? DEFAULT_PLAN : planFor(prompt);
+  build(plan.layout); refreshPlans(); walker?.dispose(); walker = null;
+  miniStage?.clear(); $("#roomStrip").innerHTML = ""; featured = "living";
+  syncDrag();
+  VIEW.minW = 92;
+  setState("loading");
+  // the lot rises out of the clouds and closes up under the floor plate
+  tween(D(700), (p) => (S.iex = 1 - p), ease.inOutCubic);
+  S.rise = -70; tween(D(1500), (p) => (S.rise = -70 * (1 - p)), ease.spring, D(150));
+  resetBoard(); $("#tags").innerHTML = ""; setThought("");
+  S.spin = false;
+  const r0 = ((S.rot % (Math.PI * 2)) + Math.PI * 3) % (Math.PI * 2) - Math.PI;
+  tween(D(900), (p) => (S.rot = r0 * (1 - p)), ease.inOutCubic);
+  resetHouse(false); setLayerLabels(false); S.explode = 1; S.cut = 0;
+  camTo({ size: 66, ty: -2 }, 900);
+  startTimer();
+  // ?speed=N plays the build story N× faster (review/testing)
+  const sp = Number(new URLSearchParams(location.search).get("speed")) || 1;
+  const script = buildScript(prompt, plan);
+  reflowIds = script.filter((ev) => ev.type === "place" && ev.reflow).map((ev) => ev.roomId);
+  detachId = reflowIds.at(-1);
+  run = playScript(script, onEvent, { speed: (RM ? 4 : 1) * sp });
+}
+let fixNote = "";
+function onEvent(e) {
+  switch (e.type) {
+    case "phase":
+      setPhase(e.id);
+      if (e.id === "furnish") raising.then(() => { camTo({ size: 54, ty: 2 }, 900); tween(D(800), (p) => (S.cut = p), ease.inOutCubic); });
+      break;
+    case "thought": setThought(e.text); break;
+    case "room":
+      $("#tags").insertAdjacentHTML("beforeend", `<li data-id="${e.room.id}">${e.room.name}<span>${e.room.target_sqft}</span></li>`);
+      break;
+    case "place": if (e.reflow) flash(e.roomId); else placeRoom(e.roomId); break;
+    case "check": onCheck(e); break;
+    case "fix": fixNote = e.note; onFix(e); break;
+    case "walls": raising = raise(); break;
+    case "furnish": raising.then(() => furnishRoom(e.roomId)); break;
+    case "done": raising.then(() => furnishing).then(() => wipe(() => finish(e.stats))); break;
+  }
+}
+
+// ---------- result ----------
+$("#rules").innerHTML = RULES.map((r) => `<li>${r.label}</li>`).join("");
+function finish(stats) {
+  cancelAnimationFrame(timerRAF);
+  setState("result");
+  $("#title").textContent = `“${prompt}”`;
+  $("#stats").innerHTML = `
+    <div class="stat wide"><b>${stats.sqft.toLocaleString()}</b><span>square feet across ${stats.rooms} rooms</span></div>
+    <div class="stat"><b>${stats.rulesPassed}/7</b><span>layout rules pass</span></div>
+    <div class="stat"><b>${stats.rounds}</b><span>fix round</span></div>
+    <div class="stat"><b>${stats.seconds}<i>s</i></b><span>prompt to walkable house</span></div>
+    <div class="stat"><b>${furn.count}</b><span>furniture pieces</span></div>`;
+  for (const [k, Lb] of Object.entries(roomLeaders)) { const o0 = Lb.opacity; tween(D(400), (p) => (Lb.opacity = o0 * (1 - p))); }
+  $("#roundBody").innerHTML = failures.map((f) => `<p><em>${f.rule}.</em> ${f.message}</p>`).join("") + `<p><em>Fix.</em> ${fixNote}</p>`;
+  setView("cutaway");
+  buildRoomMinis();
+  setTimeout(() => {
+    controls.target.copy(target); ortho.position.copy(target).addScaledVector(ISO, 160); ortho.zoom = 1; ortho.updateProjectionMatrix();
+    controls.enabled = true; syncDrag();
+  }, D(950));
+}
+let view = "cutaway", editing = false;
+// drag is live only on the finished house, in the two "inhabited" views, and never mid-edit or mid-walk
+function syncDrag() {
+  if (!drag) return;
+  const on = document.body.dataset.state === "result" && (view === "cutaway" || view === "assembled") && !editing && controls.enabled;
+  drag.enabled = on; $("#dragHint").classList.toggle("on", on);
+}
+function setView(v) {
+  view = v; syncDrag();
+  document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === v)));
+  $("#plan").classList.toggle("on", v === "plan");
+  const ex = v === "exploded" ? 1 : 0, e0 = S.explode, ct = v === "cutaway" ? 1 : 0, c0 = S.cut, i0 = S.iex;
+  tween(D(1100), (p) => { S.explode = e0 + (ex - e0) * p; S.cut = c0 + (ct - c0) * p; S.iex = i0 + (ex - i0) * p; }, ease.settle);
+  setLayerLabels(v === "exploded"); layerLabels.forEach((Lb) => (Lb.opacity = 1));
+  const ty = ex ? 9 : -2, size = (ex ? 128 : 66) * FIT;
+  if (controls.enabled) { const t0 = controls.target.y, s0 = VIEW.size; tween(D(1100), (p) => { controls.target.y = t0 + (ty - t0) * p; VIEW.size = s0 + (size - s0) * p; }, ease.settle); target.y = ty; }
+  else camTo({ size, ty }, 900);
+}
+document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => setView(b.dataset.view)));
+function refreshPlans() {
+  $("#plan").innerHTML = planSVG(cur, { pad: 1.5 });
+  $("#mini").innerHTML = planSVG(cur, { labels: false, pad: 1 });
+  const svg = $("#mini svg");
+  mini.head = document.createElementNS(NS, "line"); mini.head.setAttribute("class", "heading");
+  mini.dot = document.createElementNS(NS, "circle"); mini.dot.setAttribute("class", "me"); mini.dot.setAttribute("r", 1.1);
+  svg.append(mini.head, mini.dot);
+}
+refreshPlans();
+
+const EDIT_EXAMPLES = ["Make the kitchen bigger", "Make bedroom 2 bigger", "Make the office smaller"];
+const lifted = (it, ids) => it.roomIds.some((id) => ids.includes(id));
+$("#editForm").addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const input = $("#editInput"), note = $("#editNote"), btn = ev.target.querySelector("button");
+  const text = input.value.trim() || input.placeholder;
+  const res = editLayout(cur, text);
+  if (!res) {
+    note.innerHTML = `Name a room and say bigger or smaller. Try ${EDIT_EXAMPLES.map((x) => `<button type="button" class="ex">${x}</button>`).join(" ")}`;
+    note.querySelectorAll(".ex").forEach((b) => b.addEventListener("click", () => { input.value = b.textContent; input.focus(); }));
+    return;
+  }
+  btn.disabled = true; input.disabled = true; editing = true; syncDrag();
+  KEEP_ARRANGEMENT = furn?.getArrangement?.() ?? null; // moved furniture survives the edit
+  const names = res.changed.map((id) => roomById(id, cur).name);
+  note.textContent = `Editing ${names.join(", ")}. Everything else stays where it is.`;
+  // 1. lift the rooms that change (floor, walls, furniture, windows, doors)
+  const up = items.filter((it) => lifted(it, res.changed));
+  await tween(D(520), (p) => up.forEach((it) => (it.drop = 20 * p)), ease.settle);
+  // 2. swap in the solver's new geometry, still lifted, and drop it back in
+  const keepExplode = S.explode;
+  build(res.layout); refreshPlans(); walker?.dispose(); walker = null;
+  S.explode = keepExplode;
+  const down = items.filter((it) => lifted(it, res.changed));
+  down.forEach((it) => (it.drop = 20));
+  await Promise.all(down.map((it, i) => tween(D(820), (p) => (it.drop = 20 * (1 - p)), ease.drop, D((it.layer === L.furniture ? 180 : 0) + (i % 6) * 40))));
+  res.changed.forEach((id) => flash(id));
+  note.textContent = `${res.note} All seven rules still pass.`;
+  refreshRoomMinis(res.changed);
+  $("#stats .stat:last-child b").textContent = furn.count;
+  btn.disabled = false; input.disabled = false; input.value = ""; editing = false; syncDrag();
+});
+
+// ---------- walk ----------
+function enterWalk() {
+  furn.recomputeBoxes();
+  if (!walker) walker = createWalker(persp, canvas, cur, { extraBoxes: furn.boxes });
+  controls.enabled = false; syncDrag();
+  house.ceilings.visible = true; walkLights.visible = true;
+  hemi.intensity = 0.55; sun.intensity = 0.5; ground.visible = false;
+  $("#plan").classList.remove("on");
+  S.explode = 0; S.cut = 0; S.iex = 0; S.rot = 0; house.group.position.y = 0;
+  setLayerLabels(false);
+  setState("walk");
+  cam = persp; walker.enter();
+  canvas.focus?.();
+}
+function exitWalk() {
+  if (!walker?.active) return;
+  walker.exit(); cam = ortho;
+  house.ceilings.visible = false; walkLights.visible = false;
+  hemi.intensity = 1.15; sun.intensity = 1.9; ground.visible = true;
+  setState("result");
+  controls.enabled = true;
+  setView("cutaway");
+  $("#walkBtn").focus();
+}
+$("#walkBtn").addEventListener("click", enterWalk);
+$("#leaveBtn").addEventListener("click", exitWalk);
+addEventListener("keydown", (e) => { if (e.key === "Escape") exitWalk(); });
+
+// ---------- room minis (DOM-pinned dioramas, product-switcher style) ----------
+let miniStage = null, featured = "living";
+const MINI_ORDER = ["living", "kitchen", "dining", "primary_bedroom", "bedroom_2", "bedroom_3", "office", "bathroom_1", "bathroom_2", "laundry"];
+const miniRooms = () => MINI_ORDER.filter((id) => roomById(id, cur)).concat(cur.rooms.filter((r) => !MINI_ORDER.includes(r.id) && r.type !== "hall").map((r) => r.id));
+const pieceCount = (id) => furn.byRoom[id]?.children.length ?? 0;
+const capFor = (id) => { const r = roomById(id, cur); const n = pieceCount(id); return `<b>${r.name}</b><small>${fmtFt(r.w)} × ${fmtFt(r.h)}, ${sqft(r)} sq ft${n ? `, ${n} pieces` : ""}</small>`; };
+function buildRoomMinis() {
+  if (!miniStage) {
+    miniStage = createMiniStage({ z: 40 });
+    // atmosphere.js clears every frame before any item renders; three's initial clear alpha is 1,
+    // so with all minis scrolled out of view the overlay paints opaque black. Force a transparent clear.
+    miniStage.renderer.setClearColor(0x000000, 0);
+  }
+  miniStage.clear();
+  const strip = $("#roomStrip");
+  strip.innerHTML = miniRooms().map((id) => `<button type="button" class="room-pill" data-id="${id}" aria-pressed="${id === featured}"><i class="thumb"></i><span>${roomById(id, cur).name}</span></button>`).join("");
+  miniStage.add($("#featureStage"), roomDiorama(house, furn, featured), { baseYaw: 0.5 });
+  $("#featureCap").innerHTML = capFor(featured);
+  strip.querySelectorAll(".room-pill").forEach((b, i) => {
+    miniStage.add(b.querySelector(".thumb"), roomDiorama(house, furn, b.dataset.id), { baseYaw: 0.4 + i * 0.35 });
+    b.addEventListener("click", () => selectRoom(b.dataset.id));
+  });
+}
+function selectRoom(id) {
+  if (id === featured) return;
+  featured = id;
+  document.querySelectorAll(".room-pill").forEach((b) => {
+    b.setAttribute("aria-pressed", String(b.dataset.id === id));
+    if (b.dataset.id === id) b.scrollIntoView({ inline: "nearest", block: "nearest", behavior: RM ? "auto" : "smooth" });
+  });
+  miniStage.swap($("#featureStage"), roomDiorama(house, furn, id));
+  $("#featureCap").innerHTML = capFor(id);
+}
+function refreshRoomMinis(changed, mark = true) {
+  if (!miniStage) return;
+  for (const id of changed) {
+    const b = document.querySelector(`.room-pill[data-id="${id}"]`); if (!b) continue;
+    if (mark) b.classList.add("changed");
+    miniStage.swap(b.querySelector(".thumb"), roomDiorama(house, furn, id));
+    if (id === featured) { miniStage.swap($("#featureStage"), roomDiorama(house, furn, id)); $("#featureCap").innerHTML = capFor(id); }
+  }
+}
+// minis render on a fixed canvas, so hide any that scroll out of the panel or the strip
+function clipMinis() {
+  const panel = document.querySelector(".panel").getBoundingClientRect(), strip = $("#roomStrip").getBoundingClientRect();
+  const inside = (r, c) => r.top >= c.top - 1 && r.bottom <= c.bottom + 1 && r.left >= c.left - 1 && r.right <= c.right + 1;
+  const f = $("#featureStage"); f.style.visibility = inside(f.getBoundingClientRect(), panel) ? "" : "hidden";
+  document.querySelectorAll(".room-pill .thumb").forEach((t) => {
+    const r = t.getBoundingClientRect(); t.style.visibility = inside(r, panel) && inside(r, strip) ? "" : "hidden";
+  });
+}
+
+// ---------- graphic cloud wipe between states ----------
+// A bank of flat white puffs (ink outline, pale-blue belly) sweeps up and covers the screen, the state swaps
+// underneath, then the bank's trailing edge sweeps up and clears it.
+const wipeC = $("#wipe"), wg = wipeC.getContext("2d");
+let wiping = false;
+function wipe(mid) {
+  if (wiping) return; wiping = true;
+  if (RM) { mid(); wiping = false; return; }
+  const dpr = Math.min(2, devicePixelRatio || 1), W = innerWidth, H = innerHeight;
+  wipeC.width = W * dpr; wipeC.height = H * dpr; wipeC.style.display = "block";
+  wg.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const step = Math.max(70, W / 12), bumps = [];
+  for (let x = -step / 2, i = 0; x < W + step; x += step, i++) bumps.push({ x, r: step * (0.62 + ((i * 37) % 10) / 22), dy: ((i * 53) % 7) * 6 });
+  const draw = (top, bot) => {
+    wg.clearRect(0, 0, W, H);
+    const edge = (y, dir, grow) => { for (const b of bumps) { wg.moveTo(b.x + b.r + grow, y + dir * b.dy); wg.arc(b.x, y + dir * b.dy, b.r + grow, 0, Math.PI * 2); } };
+    const body = (grow) => { wg.beginPath(); wg.rect(-10, top - grow, W + 20, Math.max(0, bot - top) + grow * 2); edge(top, 1, grow); edge(bot, -1, grow); };
+    wg.fillStyle = "#151515"; body(4); wg.fill();
+    wg.fillStyle = "#ffffff"; body(0); wg.fill();
+    // pale-blue bellies on the leading puffs read as toon shading
+    wg.save(); body(0); wg.clip(); wg.fillStyle = "#d6dbff";
+    wg.beginPath(); for (const b of bumps) { wg.moveTo(b.x + b.r * 0.9, top + b.dy + b.r * 0.45); wg.arc(b.x, top + b.dy + b.r * 0.45, b.r * 0.9, 0, Math.PI); } wg.fill();
+    wg.restore();
+  };
+  const ease3 = (p) => (p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2);
+  const span = step * 1.4, run = (ms, f) => new Promise((res) => {
+    const t0 = performance.now();
+    const tick = () => { const p = Math.min(1, (performance.now() - t0) / ms); f(ease3(p)); p < 1 ? requestAnimationFrame(tick) : res(); };
+    tick();
+  });
+  run(480, (p) => draw(H + span - p * (H + span * 2), H + span * 2))
+    .then(() => { mid(); return new Promise((r) => setTimeout(r, 90)); })
+    .then(() => run(560, (p) => draw(-span * 2, H + span - p * (H + span * 3))))
+    .then(() => { wg.clearRect(0, 0, W, H); wipeC.style.display = "none"; wiping = false; });
+}
+
+// ---------- landing / restart ----------
+$("#askForm").addEventListener("submit", (e) => { e.preventDefault(); const t = $("#prompt").value; wipe(() => generate(t)); });
+$("#newBtn").addEventListener("click", () => wipe(() => {
+  run?.cancel(); controls.enabled = false; syncDrag(); VIEW.minW = 100; ortho.zoom = 1; ortho.updateProjectionMatrix();
+  resetHouse(true); S.explode = 1; S.cut = 0; S.iex = 1; S.rise = 0; S.spin = true; setLayerLabels(true); layerLabels.forEach((L) => (L.opacity = 1));
+  $("#plan").classList.remove("on");
+  miniStage?.clear(); $("#roomStrip").innerHTML = "";
+  camTo({ size: 126, ty: 9 }, 800);
+  setState("landing"); $("#prompt").focus();
+}));
+// landing: exploded house slowly turning, layers annotated
+resetHouse(true); setLayerLabels(true);
+// ---------- drag & drop furniture (Cutaway / Full height) ----------
+let toastT = 0;
+function toast(html) {
+  const t = $("#toast"); t.innerHTML = html; t.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => t.classList.remove("on"), 2200);
+}
+const nice = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+drag = createFurnitureDrag({
+  camera: ortho, dom: canvas, furniture: furn, layout: cur, controls,
+  onPick: ({ item }) => toast(`${nice(item.userData.name)}<small>Drop it in any room</small>`),
+  onMove: ({ roomId }) => { const r = roomById(roomId, cur); if (r) toast(`→ ${r.name}<small>Release to drop</small>`); },
+  onDrop: ({ item, from, to, cancelled }) => {
+    if (cancelled) { toast(`Put back<small>${roomById(from, cur).name}</small>`); return; }
+    const r = roomById(to, cur);
+    toast(from === to ? `${nice(item.userData.name)} moved<small>${r.name}</small>` : `${nice(item.userData.name)} → ${r.name}<small>moved from ${roomById(from, cur).name}</small>`);
+    flash(to, 0xffc23d);
+    setTimeout(() => { refreshRoomMinis([...new Set([from, to])], false); }, D(700));
+  },
+});
+syncDrag();
+
+// Site view: "On site" button next to Walk through (Google 3D tiles; see core/site.js).
+addSiteButton($("#walkBtn"), () => cur);
+addPhotorealButton($("#walkBtn"), () => ({ layout: cur, furniture: furn })); // Blender Cycles 360° tour, renders automatically
+</script>
+</body>
+</html>

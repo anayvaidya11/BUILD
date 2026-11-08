@@ -1,0 +1,1031 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>build — drafting table</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..700&family=Architects+Daughter&display=swap" rel="stylesheet" />
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"}}</script>
+<style>
+  :root {
+    --paper: #13226b; --paper-deep: #0e1a55; --line: #d8e6ff; --line-dim: rgba(216, 230, 255, .55);
+    --faint: rgba(190, 210, 255, .07); --faint2: rgba(190, 210, 255, .14);
+    --blue: #2B45F5; --red: #ff8f7e; --green: #9ff2c4;
+    --hand: "Architects Daughter", cursive; --font: "Archivo", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; }
+  body {
+    font-family: var(--font); color: var(--line); background-color: var(--paper); overflow: hidden;
+    background-image:
+      linear-gradient(var(--faint2) 1px, transparent 1px), linear-gradient(90deg, var(--faint2) 1px, transparent 1px),
+      linear-gradient(var(--faint) 1px, transparent 1px), linear-gradient(90deg, var(--faint) 1px, transparent 1px);
+    background-size: 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+    background-position: -1px -1px;
+  }
+  #stage { position: fixed; inset: 0; z-index: 0; }
+  #stage canvas { display: block; touch-action: none; }
+  /* sheet frame */
+  .frame { position: fixed; inset: 14px; border: 1.5px solid var(--line-dim); pointer-events: none; z-index: 1; }
+  .frame::after { content: ""; position: absolute; inset: 4px; border: 1px solid rgba(216,230,255,.18); }
+  #ui { position: fixed; inset: 0; z-index: 2; pointer-events: none; }
+  #ui > * { pointer-events: auto; }
+  button, input, textarea { font: inherit; color: inherit; }
+  :focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+  .btn { border: 1.5px solid var(--line); background: transparent; padding: 11px 18px; cursor: pointer; font-weight: 600; font-stretch: 90%; font-size: 15px; transition: background .15s, color .15s; }
+  .btn:hover { background: rgba(216,230,255,.1); }
+  .btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+  .btn.primary:hover { background: #3d56ff; }
+  [hidden] { display: none !important; }
+
+  /* topbar */
+  .top { position: fixed; top: 30px; left: 40px; right: 40px; display: flex; justify-content: space-between; align-items: center; pointer-events: none; z-index: 3; }
+  .top > * { pointer-events: auto; }
+  .brand { display: inline-flex; align-items: flex-end; gap: 2px; font-weight: 600; font-size: 25px; letter-spacing: -0.03em; color: #fff; text-decoration: none; }
+  .brand span { margin-bottom: -2px; }
+  .sheetno { font-stretch: 75%; font-size: 13px; color: var(--line-dim); }
+
+  /* ---------- landing ---------- */
+  #landing { position: absolute; left: clamp(28px, 7vw, 120px); top: 50%; transform: translateY(-50%); width: min(560px, calc(100vw - 56px)); }
+  #landing::before { content: ""; position: absolute; inset: -80px -120px -80px -160px; z-index: -1; background: radial-gradient(closest-side, rgba(19,34,107,.82), rgba(19,34,107,0)); pointer-events: none; }
+  #landing h1 { font-size: clamp(38px, 5.6vw, 74px); line-height: .96; font-weight: 600; font-stretch: 72%; letter-spacing: -0.01em; color: #fff; }
+  #landing p.lede { margin-top: 18px; font-size: 17px; line-height: 1.5; color: var(--line-dim); max-width: 46ch; }
+  .promptbox { margin-top: 30px; border: 1.5px solid var(--line); background: rgba(14,26,85,.72); backdrop-filter: blur(4px); }
+  .promptbox textarea { width: 100%; resize: none; border: 0; background: transparent; padding: 18px 18px 6px; font-size: 20px; line-height: 1.35; font-stretch: 90%; color: #fff; min-height: 92px; outline: none; }
+  .promptbox .row { display: flex; justify-content: space-between; align-items: center; padding: 10px 10px 10px 18px; gap: 12px; border-top: 1px dashed rgba(216,230,255,.3); }
+  .promptbox .hint { font-size: 13px; color: var(--line-dim); font-stretch: 80%; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .chip { border: 1px solid rgba(216,230,255,.35); background: transparent; padding: 7px 12px; font-size: 14px; cursor: pointer; font-stretch: 85%; color: var(--line-dim); }
+  .chip:hover { color: #fff; border-color: var(--line); }
+  .dimnote { position: absolute; right: 48px; top: 50%; font-family: var(--hand); font-size: 17px; color: var(--line-dim); transform: rotate(-3deg); text-align: right; max-width: 22ch; }
+
+  /* ---------- notes column (loading + result) ---------- */
+  #notes { position: absolute; left: 40px; top: 84px; bottom: 40px; width: 280px; display: flex; flex-direction: column; gap: 22px; overflow: hidden; }
+  #notes h2 { font-size: 14px; font-weight: 600; font-stretch: 80%; color: #fff; padding-bottom: 6px; border-bottom: 1px solid rgba(216,230,255,.3); }
+  .prompt-echo { font-size: 19px; line-height: 1.25; font-stretch: 85%; color: #fff; }
+  #thoughts { list-style: none; display: flex; flex-direction: column; gap: 10px; font-family: var(--hand); font-size: 16px; line-height: 1.35; color: var(--line); min-height: 0; overflow: hidden; flex: 1 1 auto; mask-image: linear-gradient(transparent, #000 40px); justify-content: flex-end; }
+  #thoughts li { animation: ink .5s ease-out both; }
+  #thoughts li.fix { color: var(--red); border-left: 2px solid var(--red); padding-left: 10px; }
+  #thoughts li.ok { color: var(--green); }
+  @keyframes ink { from { opacity: 0; clip-path: inset(0 100% 0 0); } to { opacity: 1; clip-path: inset(0 0 0 0); } }
+  #program { list-style: none; font-size: 14px; font-stretch: 85%; display: grid; gap: 3px; flex: 0 0 auto; }
+  #program li { display: flex; justify-content: space-between; animation: ink .35s ease-out both; color: var(--line-dim); }
+  #program li b { font-weight: 500; color: var(--line); }
+
+  /* ---------- plan svg ---------- */
+  #plan { position: absolute; left: 350px; right: 420px; top: 90px; bottom: 60px; display: grid; place-items: center; transition: opacity .8s; }
+  #plan svg { width: 100%; height: 100%; overflow: visible; }
+  .rm .fill { fill: rgba(216,230,255,.035); transition: fill .6s; }
+  .rm .edge { fill: none; stroke: var(--line); stroke-width: .22; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .8s cubic-bezier(.6,0,.3,1), stroke .3s; }
+  .rm.drawn .edge { stroke-dashoffset: 0; }
+  .rm.active .fill { fill: rgba(43,69,245,.55); }
+  .rm.bad .edge { stroke: var(--red); stroke-width: .32; }
+  .rm.bad .fill { fill: rgba(255,143,126,.12); }
+  .rm text { fill: var(--line); font-family: var(--font); font-stretch: 75%; text-anchor: middle; opacity: 0; transition: opacity .5s .4s; }
+  .rm.drawn text { opacity: 1; }
+  .rm .nm { font-size: 1.15px; font-weight: 600; }
+  .rm .sz { font-size: .85px; fill: var(--line-dim); }
+  .rm .dim line { stroke: var(--line-dim); stroke-width: .07; }
+  .rm .dim text { font-size: .8px; fill: var(--line-dim); }
+  .pencil { fill: #fff; filter: drop-shadow(0 0 .6px #fff); transition: opacity .3s; }
+
+  /* ---------- title block ---------- */
+  #tb { position: absolute; right: 40px; bottom: 40px; width: 360px; border: 1.5px solid var(--line); background: rgba(14,26,85,.9); font-size: 13px; font-stretch: 85%; }
+  #tb .cells { display: grid; grid-template-columns: 1fr 1fr; }
+  #tb .cell { padding: 7px 10px; border-bottom: 1px solid rgba(216,230,255,.3); }
+  #tb .cell:nth-child(odd) { border-right: 1px solid rgba(216,230,255,.3); }
+  #tb .cell.wide { grid-column: span 2; border-right: 0; }
+  #tb .k { display: block; font-size: 11px; color: var(--line-dim); }
+  #tb .v { display: block; font-size: 15px; color: #fff; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tb .v.big { font-size: 22px; font-stretch: 75%; font-variant-numeric: tabular-nums; }
+  .phases { list-style: none; display: flex; gap: 4px; padding: 8px 10px; border-bottom: 1px solid rgba(216,230,255,.3); }
+  .phases li { flex: 1; height: 4px; background: rgba(216,230,255,.18); position: relative; }
+  .phases li.done { background: var(--line); }
+  .phases li.now { background: var(--blue); box-shadow: 0 0 10px var(--blue); }
+  .progress { height: 2px; background: rgba(216,230,255,.15); }
+  .progress i { display: block; height: 100%; width: 0; background: #fff; }
+  #rules { list-style: none; padding: 6px 10px 10px; display: grid; gap: 5px; }
+  #rules li { display: grid; grid-template-columns: 14px 1fr; gap: 8px; align-items: start; color: var(--line-dim); }
+  #rules li i { width: 10px; height: 10px; border: 1px solid var(--line-dim); margin-top: 3px; position: relative; }
+  #rules li.pass { color: var(--line); }
+  #rules li.pass i { background: var(--line); border-color: var(--line); }
+  #rules li.pass i::after { content: ""; position: absolute; left: 3px; top: 0; width: 3px; height: 6px; border: solid var(--paper); border-width: 0 1.5px 1.5px 0; transform: rotate(45deg); }
+  #rules li.fail { color: var(--red); }
+  #rules li.fail i { border-color: var(--red); background: repeating-linear-gradient(45deg, var(--red) 0 1px, transparent 1px 3px); }
+  #rules li em { grid-column: 2; font-style: normal; font-family: var(--hand); font-size: 13px; line-height: 1.3; }
+  #rules li.fixed em { color: var(--green); }
+  #rulesSum { display: none; padding: 8px 10px 0; color: #fff; font-weight: 500; }
+  body[data-state="result"] #rulesSum { display: block; }
+  body[data-state="result"] #rules li:not(.fixed) { display: none; }
+  body[data-state="result"] #tb { width: 320px; }
+
+  /* ---------- result panel ---------- */
+  #result { position: absolute; left: 40px; top: 84px; width: 300px; display: flex; flex-direction: column; gap: 18px; }
+  #result h2 { font-size: 34px; line-height: 1; font-weight: 600; font-stretch: 72%; color: #fff; }
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid rgba(216,230,255,.3); }
+  .stats div { padding: 9px 0; border-bottom: 1px solid rgba(216,230,255,.3); }
+  .stats b { display: block; font-size: 24px; font-weight: 600; font-stretch: 75%; color: #fff; font-variant-numeric: tabular-nums; }
+  .stats span { font-size: 12px; color: var(--line-dim); font-stretch: 85%; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .seg { display: inline-flex; border: 1.5px solid var(--line); }
+  .seg button { border: 0; background: transparent; padding: 10px 14px; cursor: pointer; font-weight: 600; font-stretch: 90%; font-size: 14px; }
+  .seg button[aria-pressed="true"] { background: var(--line); color: var(--paper); }
+  form.edit { display: flex; border: 1.5px solid var(--line); background: rgba(14,26,85,.85); }
+  form.edit input { flex: 1; min-width: 0; border: 0; background: transparent; padding: 11px 12px; font-size: 15px; font-stretch: 90%; outline: none; color: #fff; }
+  form.edit input::placeholder { color: var(--line-dim); }
+  form.edit button { border: 0; border-left: 1.5px solid var(--line); background: transparent; padding: 0 14px; cursor: pointer; font-weight: 600; font-stretch: 90%; }
+  #editlog { font-family: var(--hand); font-size: 15px; line-height: 1.35; color: var(--line); min-height: 1.4em; }
+  #editlog.warn { color: var(--red); } #editlog.ok { color: var(--green); }
+  form.edit button:disabled { opacity: .5; cursor: progress; }
+  .linkish { background: none; border: 0; color: var(--line-dim); text-decoration: underline; text-underline-offset: 3px; cursor: pointer; font-size: 14px; align-self: flex-start; }
+  #final { position: absolute; left: 380px; right: 420px; top: 90px; bottom: 60px; display: grid; place-items: center; }
+  #final svg { width: 100%; height: 100%; }
+  #final .p-room { fill: rgba(216,230,255,.04); transition: fill .4s; }
+  #final .p-room.flash { fill: rgba(43,69,245,.6); }
+  #final .p-wall { stroke: #fff; stroke-width: .4; stroke-linecap: square; }
+  #final .p-wall:not(.ext) { stroke-width: .25; }
+  #final .p-win { stroke: #8fb6ff; stroke-width: .7; }
+  #final .p-door { fill: none; stroke: #fff; stroke-width: .2; }
+  #final .p-furn, #walk .mini .p-furn { fill: none; stroke: rgba(216,230,255,.55); stroke-width: .09; }
+  #final .p-furn.rug { stroke-dasharray: .35 .25; stroke: rgba(216,230,255,.3); }
+  #walk .mini .p-furn { stroke-width: .15; } #walk .mini .p-furn.rug { display: none; }
+  #final .p-label text { fill: var(--line); font-size: 1.1px; font-weight: 600; font-stretch: 75%; }
+  #final .p-label .p-dim { fill: var(--line-dim); font-size: .8px; font-weight: 400; }
+
+  /* ---------- room previews: small 3D dioramas pinned to these cards (drawn by a shared canvas above) ---------- */
+  .rooms3d { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .rcard { position: relative; height: 98px; border: 1px solid rgba(216,230,255,.35); background: rgba(14,26,85,.78); cursor: pointer; text-align: left; padding: 0; overflow: hidden; transition: border-color .2s, background .2s; }
+  .rcard:hover { border-color: var(--line); background: rgba(28,48,143,.7); }
+  .rcard[aria-pressed="true"] { border-color: #fff; background: rgba(43,69,245,.35); }
+  .rcard .rc-v { position: absolute; inset: 0 0 26px 0; }
+  .rcard .rc-l { position: absolute; left: 8px; right: 8px; bottom: 6px; display: flex; justify-content: space-between; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 600; font-stretch: 80%; color: #fff; white-space: nowrap; }
+  .rcard .rc-l small { font-size: 11px; font-weight: 400; color: var(--line-dim); }
+  .rcard.redo::after { content: "redrawn"; position: absolute; top: 6px; right: 6px; font-family: var(--hand); font-size: 12px; color: var(--green); }
+  .rooms-k { font-size: 12px; color: var(--line-dim); font-stretch: 85%; margin-bottom: -10px; }
+
+  .draghint { font-family: var(--hand); font-size: 14px; line-height: 1.3; color: var(--line-dim); margin-top: -8px; }
+  #toast { position: fixed; left: 50%; bottom: 52px; transform: translate(-50%, 18px); opacity: 0; z-index: 6; pointer-events: none;
+    background: rgba(14,26,85,.94); border: 1.5px solid var(--line); padding: 9px 16px; font-family: var(--hand); font-size: 16px; color: #fff; white-space: nowrap;
+    transition: opacity .3s, transform .5s cubic-bezier(.2,1.5,.4,1); }
+  #toast.on { opacity: 1; transform: translate(-50%, 0); }
+  body:not([data-state="result"]) #toast { display: none; }
+
+  /* landing diorama exit */
+  #landing, .dimnote { transition: opacity .5s, transform .6s; }
+  body.diving #landing { opacity: 0; transform: translateY(calc(-50% + 30px)); pointer-events: none; }
+  body.diving .dimnote { opacity: 0; }
+
+  /* ---------- walk HUD ---------- */
+  #walk .room { position: absolute; left: 40px; top: 40px; font-size: 40px; font-weight: 600; font-stretch: 72%; color: #fff; text-shadow: 0 2px 18px rgba(0,0,0,.4); }
+  #walk .exit { position: absolute; right: 40px; top: 36px; background: rgba(14,26,85,.85); }
+  #walk .keys { position: absolute; left: 50%; bottom: 40px; transform: translateX(-50%); font-size: 14px; font-stretch: 85%; background: rgba(14,26,85,.85); border: 1px solid rgba(216,230,255,.4); padding: 8px 14px; white-space: nowrap; }
+  #walk .mini { position: absolute; right: 40px; bottom: 40px; width: 230px; border: 1.5px solid var(--line); background: rgba(14,26,85,.9); padding: 8px; }
+  #walk .mini .p-room { fill: none; } #walk .mini .p-wall { stroke: var(--line); stroke-width: .5; } #walk .mini .p-win { stroke: #8fb6ff; stroke-width: .8; }
+  #walk .mini .p-door { fill: none; stroke: #fff; stroke-width: .3; }
+  #walk .mini .me { fill: var(--blue); stroke: #fff; stroke-width: .35; } #walk .mini .hd { stroke: #fff; stroke-width: .4; }
+  .crosshair { position: absolute; left: 50%; top: 50%; width: 14px; height: 14px; margin: -7px; border: 1.5px solid rgba(255,255,255,.7); border-radius: 50%; }
+
+  /* ---------- states ---------- */
+  body:not([data-state="landing"]) #landing, body:not([data-state="landing"]) .dimnote { display: none; }
+  body:not([data-state="loading"]):not([data-state="result"]) #notes { display: none; }
+  body[data-state="result"] #notes { display: none; }
+  body:not([data-state="loading"]) #plan { display: none; }
+  body:not([data-state="result"]) #result, body:not([data-state="result"]) #final { display: none; }
+  body[data-view="3d"] #final { display: none; }
+  body[data-state="landing"] #tb, body[data-state="walk"] #tb { display: none; }
+  body:not([data-state="walk"]) #walk { display: none; }
+  body[data-state="walk"] .top, body[data-state="walk"] .frame { display: none; }
+  body[data-state="result"][data-view="2d"] #stage { visibility: hidden; }
+
+  @media (max-width: 900px) {
+    body { overflow: auto; }
+    #landing { position: relative; left: auto; top: auto; transform: none; margin: 96px 28px 60px; }
+    .dimnote { display: none; }
+    #notes { left: 28px; right: 28px; top: 74px; bottom: auto; width: auto; height: 26vh; gap: 10px; }
+    #notes .program-wrap { display: none; }
+    #plan, #final { left: 20px; right: 20px; top: 32vh; bottom: 42vh; }
+    #tb { left: 20px; right: 20px; bottom: 20px; width: auto; max-height: 34vh; overflow: auto; }
+    #tb .cell.wide:first-child, #tb .cell:nth-child(4) { display: none; } /* project repeats the brief; scale is decoration on a phone */
+    #tb .cells { grid-template-columns: repeat(3, 1fr); }
+    #tb .cell, #tb .cell:nth-child(odd) { border-right: 1px solid rgba(216,230,255,.3); }
+    #tb .cell.wide { grid-column: auto; }
+    #rules li:not(.fail):not(.fixed) span { opacity: .8; }
+    #result { left: 20px; right: 20px; top: 70px; width: auto; gap: 12px; padding: 12px; background: rgba(14,26,85,.9); border: 1px solid rgba(216,230,255,.3); }
+    #result h2 { font-size: 28px; }
+    body[data-state="result"] #tb { display: none; }
+    #final { top: auto; bottom: 20px; height: 34vh; }
+    .rooms3d { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+    .draghint { display: none; }
+    .rcard { height: 72px; } .rcard .rc-v { bottom: 20px; } .rcard .rc-l { font-size: 11px; left: 5px; right: 5px; bottom: 4px; } .rcard .rc-l small, .rooms-k { display: none; } .rcard .rc-l { display: block; overflow: hidden; text-overflow: ellipsis; }
+    body.diving #landing { transform: translateY(30px); }
+    #walk .room { font-size: 28px; left: 24px; top: 24px; } #walk .exit { right: 24px; top: 20px; }
+    #walk .mini { width: 150px; right: 16px; bottom: 80px; } #walk .keys { bottom: 20px; font-size: 12px; }
+    .top { top: 26px; left: 28px; right: 28px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #thoughts li, #program li { animation-duration: .01s; }
+    .rm .edge { transition-duration: .15s; }
+  }
+</style>
+</head>
+<body data-state="landing" data-view="3d">
+<div id="stage"></div>
+<div class="frame"></div>
+
+<div class="top">
+  <a class="brand" href="../index.html" aria-label="build, back to all directions" id="brand"></a>
+  <span class="sheetno" id="sheetno">Sheet A-000 · cover</span>
+</div>
+
+<main id="ui">
+  <!-- landing -->
+  <section id="landing" aria-labelledby="h1">
+    <h1 id="h1">Describe a home.<br />Walk through it a minute later.</h1>
+    <p class="lede">Write what you need in plain English. build plans the rooms, places every wall, checks the plan against seven layout rules, and hands you a house you can walk through at eye height.</p>
+    <form class="promptbox" id="promptForm">
+      <textarea id="prompt" rows="3" aria-label="Describe the home you want"></textarea>
+      <div class="row"><span class="hint">Single storey · rooms, sizes, what sits next to what</span><button class="btn primary" type="submit">Draw my plan</button></div>
+    </form>
+    <div class="chips" id="chips"></div>
+  </section>
+  <p class="dimnote" aria-hidden="true">every plan passes all 7 rules before you see it</p>
+
+  <!-- loading -->
+  <aside id="notes" aria-live="polite">
+    <div><h2>Brief</h2><p class="prompt-echo" id="echo"></p></div>
+    <div class="program-wrap"><h2>Room program</h2><ul id="program"></ul></div>
+    <ul id="thoughts"></ul>
+  </aside>
+  <div id="plan" aria-hidden="true"></div>
+
+  <!-- result -->
+  <section id="result" aria-labelledby="rh">
+    <h2 id="rh">Your house</h2>
+    <div class="stats" id="stats"></div>
+    <div class="actions">
+      <button class="btn primary" id="walkBtn" type="button">Walk through</button>
+      <div class="seg" role="group" aria-label="View"><button type="button" data-v="3d" aria-pressed="true">Model</button><button type="button" data-v="2d" aria-pressed="false">Plan</button></div>
+    </div>
+    <p class="rooms-k">Look inside: pick a room to focus it</p>
+    <div class="rooms3d" id="rooms3d"></div>
+    <p class="draghint">Drag furniture to move it · R rotates · Esc cancels</p>
+    <form class="edit" id="editForm"><input id="editIn" aria-label="Change something about this house" placeholder="Make the kitchen bigger" /><button type="submit">Apply edit</button></form>
+    <p id="editlog" aria-live="polite"></p>
+    <button class="linkish" type="button" id="again">Start a new house</button>
+  </section>
+  <div id="final" aria-label="Floor plan"></div>
+
+  <!-- title block -->
+  <section id="tb" aria-label="Sheet status">
+    <div class="cells">
+      <div class="cell wide"><span class="k">Project</span><span class="v" id="tbProject">Untitled house</span></div>
+      <div class="cell"><span class="k">Status</span><span class="v" id="tbStatus">Waiting</span></div>
+      <div class="cell"><span class="k">Elapsed</span><span class="v big" id="tbTime">0.0 s</span></div>
+      <div class="cell"><span class="k">Scale</span><span class="v">1/8" = 1'-0"</span></div>
+      <div class="cell"><span class="k">Fix rounds</span><span class="v" id="tbRounds">0</span></div>
+      <div class="cell wide"><span class="k">Step</span><span class="v" id="tbStep">0 of 6</span></div>
+    </div>
+    <ol class="phases" id="phases" aria-label="Build steps"></ol>
+    <div class="progress"><i id="prog"></i></div>
+    <p id="rulesSum">All 7 rules pass. Fixed along the way:</p>
+    <ul id="rules"></ul>
+  </section>
+
+  <!-- walk -->
+  <section id="walk" aria-label="Walkthrough">
+    <div class="room" id="roomName">Living Room</div>
+    <button class="btn exit" id="exitWalk" type="button">Leave walkthrough</button>
+    <div class="crosshair"></div>
+    <div class="keys">W A S D to walk · drag to look · Shift to hurry · Esc to leave</div>
+    <div class="mini" id="mini"></div>
+  </section>
+  <div id="toast" role="status" aria-live="polite"></div>
+</main>
+
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import {
+  LAYOUT, RULES, PHASES, DEFAULT_PROMPT, DEFAULT_PLAN, generate, FURNITURE_STYLES, markSVG, buildHouse, buildFurniture,
+  buildScript, playScript, createWalker, planSVG, tween, tickTweens, ease, fmtFt, roomById, editLayout,
+} from "../core/core.js";
+import { enhanceRenderer, fitSun } from "../core/render.js";
+import { createFurnitureDrag } from "../core/interact.js";
+import { addSiteButton } from "../core/site.js";
+import { addPhotorealButton } from "../core/photoreal.js";
+import { createFloatingIsland, createCloudSea, attachParallax, createMist, cameraDive, createMiniStage, roomDiorama } from "../core/atmosphere.js";
+
+let KEEP_ARRANGEMENT = null; // furniture the user dragged, carried across edit rebuilds
+const RM = matchMedia("(prefers-reduced-motion: reduce)").matches;
+const M = RM ? 0.25 : 1;
+const $ = (s) => document.querySelector(s);
+const ns = "http://www.w3.org/2000/svg";
+// the current plan (generated from the prompt); W/D follow whichever layout is on the sheet
+let plan = DEFAULT_PLAN;
+let W = LAYOUT.footprint.width_ft, D = LAYOUT.footprint.depth_ft;
+// camera distances were tuned for a ~50 ft house; scale them to the plan in hand
+const SK = () => Math.max(0.8, Math.max(W, D * 1.3) / 52);
+const setState = (s) => { document.body.dataset.state = s; frame(); };
+
+$("#brand").innerHTML = `${markSVG("#fff", 24)}<span>uild</span>`;
+$("#prompt").value = DEFAULT_PROMPT;
+const CHIPS = ["2 bed cottage, big kitchen, 1,100 sq ft", "4 bed family home with a mudroom, 2,400 sq ft", "Studio with a home office, 700 sq ft"];
+$("#chips").innerHTML = CHIPS.map((c) => `<button class="chip" type="button">${c}</button>`).join("");
+$("#chips").addEventListener("click", (e) => { if (e.target.matches(".chip")) { $("#prompt").value = e.target.textContent; $("#prompt").focus(); } });
+$("#prompt").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); $("#promptForm").requestSubmit(); } });
+
+// ---------- three ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+$("#stage").appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+// filmic tone mapping + studio environment light + soft shadows (rendered look for the solid house)
+enhanceRenderer(renderer, scene, { exposure: 1.05, envIntensity: 0.5 });
+// Clouds need an opaque canvas, so the blueprint sheet (navy + 1 ft / 5 ft grid) is painted into
+// the scene background instead of showing through from CSS.
+function sheetTexture() {
+  const dpr = Math.min(devicePixelRatio, 2), c = document.createElement("canvas");
+  c.width = Math.max(2, innerWidth * dpr); c.height = Math.max(2, innerHeight * dpr);
+  const g = c.getContext("2d");
+  g.fillStyle = "#13226b"; g.fillRect(0, 0, c.width, c.height);
+  const line = (step, a) => {
+    g.strokeStyle = `rgba(190,210,255,${a})`; g.lineWidth = dpr; g.beginPath();
+    for (let x = -1; x < c.width; x += step * dpr) { g.moveTo(x + 0.5, 0); g.lineTo(x + 0.5, c.height); }
+    for (let y = -1; y < c.height; y += step * dpr) { g.moveTo(0, y + 0.5); g.lineTo(c.width, y + 0.5); }
+    g.stroke();
+  };
+  line(16, 0.07); line(80, 0.14);
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+}
+let sheetBg = sheetTexture();
+scene.background = sheetBg;
+scene.fog = new THREE.Fog(0x13226b, 150, 420);
+const camera = new THREE.PerspectiveCamera(35, 1, 0.1, 900);
+const hemi = new THREE.HemisphereLight(0xe4edff, 0x0d1a5c, 1.1);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight(0xfff4e6, 2.1);
+sun.position.set(-30, 60, 28); fitSun(sun, W, D);
+scene.add(sun);
+
+// steep enough to see furniture over 9 ft walls, far enough to see the whole lot floating in the clouds
+const VIEW34 = new THREE.Vector3(44, 86, 74);
+const COVER = new THREE.Vector3(84, 30, 118), COVER_LOOK = new THREE.Vector3(0, -13, 0);
+// portrait phones: back off so the whole floating lot fits under the headline
+const coverPos = () => { const a = innerWidth / innerHeight; return COVER.clone().multiplyScalar(a < 1 ? Math.min(2.2, 0.9 / a) : 1); };
+const MOBILE = innerWidth < 900;
+
+// ---------- atmosphere: the house floats on a lot of land above a sea of clouds ----------
+// `dio` holds everything that sways with the pointer (house, idle sketch, islands). It is held at
+// identity while the plan is drawn and during the walkthrough so plan, 3D and collision line up.
+const dio = new THREE.Group(); scene.add(dio);
+const ISLAND_Y = -0.55; // the kit's grass cap peaks ~0.5 ft above y=0; sink it under the floor slabs
+function makeIsland(layout, opts) {
+  const { width_ft: w, depth_ft: d } = layout.footprint;
+  const entrance = [layout.entrance.x - w / 2, layout.entrance.y - d / 2];
+  const isl = createFloatingIsland(w, d, { entrance, seed: 5, ...opts });
+  isl.group.position.y = ISLAND_Y;
+  // keep path stones on the grass top
+  isl.group.children.forEach((m) => { if (m.geometry?.type === "CylinderGeometry") m.position.y = 0.6; });
+  dio.add(isl.group); return isl;
+}
+// cover sheet: the island drawn as a wire sketch
+const sketchIsle = makeIsland(LAYOUT, { wire: true, grass: 0xcfe0ff, grassEdge: 0xcfe0ff, rock: 0x8aa6ff, path: 0xcfe0ff, trunk: 0x8aa6ff, leaf: [0xcfe0ff, 0xa9c2ff], shard: 0x8aa6ff, trees: 8 });
+sketchIsle.group.traverse((o) => { if (o.material) { o.material.opacity = 0.32; o.material.toneMapped = false; } });
+sketchIsle.parts.under.material.opacity = 0.15; // dense underside mesh reads as hatching at low opacity
+// final sheet: a muted, inked-in island the finished house stands on
+const ISLE_STYLE = {
+  grass: 0x7d9585, grassEdge: 0x60786b, dirt: 0x7a6d62, rock: 0x5b5d70, rockDark: 0x363c5e,
+  path: 0xdce3f2, trunk: 0x5d5060, leaf: [0x56786a, 0x6a8c78, 0x4b6a5e], shard: 0x4c5272, trees: 9,
+};
+let isle = makeIsland(LAYOUT, ISLE_STYLE);
+isle.group.visible = false;
+// a new plan means a new lot size: rebuild the island under it
+function rebuildIsle(layout) {
+  isle.group.removeFromParent();
+  isle.group.traverse((o) => { o.geometry?.dispose(); });
+  isle = makeIsland(layout, ISLE_STYLE); isle.group.visible = false;
+}
+const sea = createCloudSea({ count: MOBILE ? 60 : 140, radius: 230, inner: 34, yMin: -78, yMax: -10, size: [30, 70], color: 0xdbe6ff, shadow: 0x34489c, opacity: 0.62, seed: 4 });
+const haze = createCloudSea({ count: MOBILE ? 14 : 34, radius: 240, inner: 110, yMin: 14, yMax: 46, size: [40, 80], color: 0xc9d8ff, shadow: 0x4a5fb0, opacity: 0.35, seed: 9 });
+scene.add(sea.group, haze.group);
+const pLand = attachParallax(dio, { yaw: 0.3, pitch: 0.08, sway: 0.12, swaySpeed: 0.45, bob: RM ? 0 : 0.9 });
+const pRes = attachParallax(dio, { yaw: 0.1, pitch: 0.035, sway: 0.04, swaySpeed: 0.35, bob: 0 });
+pRes.enabled = false;
+// ease the diorama back to identity (before plan drawing / walking)
+function steadyDio(ms = 500) {
+  pLand.enabled = false; pRes.enabled = false;
+  const r0 = dio.rotation.clone(), y0 = dio.position.y;
+  if (!ms) { dio.rotation.set(0, 0, 0); dio.position.y = 0; return Promise.resolve(); }
+  return tween(ms, (t) => { dio.rotation.set(r0.x * (1 - t), r0.y * (1 - t), r0.z * (1 - t)); dio.position.y = y0 * (1 - t); }, ease.inOutCubic);
+}
+// sheet-coloured mist: navy wash with pale-blue edges, like wet ink on drafting film
+const mist = createMist(document.body, { color: "#16297a", tint: "#9fb6ff", z: 40 });
+// pull back on portrait screens so the whole 50 ft footprint fits horizontally
+const viewPos = () => { const a = innerWidth / innerHeight; return VIEW34.clone().multiplyScalar((a < 1 ? Math.min(2.3, 1.1 / a) : 1) * SK()); };
+camera.position.copy(coverPos()); camera.lookAt(COVER_LOOK);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enabled = false; controls.enableDamping = true; controls.maxPolarAngle = 1.38; controls.minDistance = 25; controls.maxDistance = 260;
+controls.autoRotateSpeed = 0.5;
+
+let lastW = 0, lastH = 0;
+function frame() {
+  const w = innerWidth, h = innerHeight, st = document.body.dataset.state;
+  renderer.setSize(w, h); camera.aspect = w / h;
+  if ((w !== lastW || h !== lastH) && scene.background === sheetBg) { sheetBg.dispose(); sheetBg = sheetTexture(); scene.background = sheetBg; }
+  lastW = w; lastH = h;
+  let shift = 0, dy = 0;
+  if (w > 900) {
+    if (st === "landing") shift = w * 0.2;
+    else if (st === "loading") shift = (350 + (w - 420)) / 2 - w / 2;
+    else if (st === "result") shift = (380 + w) / 2 - w / 2;
+  } else if (st === "result") dy = h * 0.33; // push the model below the result card on phones
+  else if (st === "landing") dy = h * 0.3; // island sits below the prompt on phones
+  else if (st === "loading") dy = -h * 0.02;
+  if (shift || dy) camera.setViewOffset(w, h, -shift, -dy, w, h); else camera.clearViewOffset();
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", frame);
+
+// idle wireframe house for the cover sheet
+const idle = new THREE.Group();
+{
+  const h = buildHouse(LAYOUT);
+  const mat = new THREE.LineBasicMaterial({ color: 0xcfe0ff, transparent: true, opacity: 0.5, toneMapped: false });
+  for (const m of [...h.walls, ...Object.values(h.floors)]) {
+    const l = new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry), mat);
+    l.position.copy(m.position); idle.add(l);
+  }
+  dio.add(idle);
+}
+
+// ---------- the house (rebuilt on every new run and every edit) ----------
+// Furniture palette: drafting film + pencil — pale paper whites, inked navy, one blue accent.
+// Coloured furniture (sage sofa, mustard + clay accents, a bedding colour per bedroom); the art is the
+// sheet's blue so the rendered house still belongs on the drafting table.
+const FSTYLE = { ...FURNITURE_STYLES.colorful, art: 0x2b45f5 };
+const WET = new Set(["bathroom", "laundry"]);
+// rendered floor tones once the plan is inked in (navy while it is still being drawn)
+const FLOOR_TONE = (t) => (WET.has(t) ? 0xdfe3ea : t === "hall" ? 0xa98b68 : t === "kitchen" ? 0xd9d2c4 : t === "closet" ? 0xa98b68 : 0xb99a76);
+const lineMat = new THREE.LineBasicMaterial({ color: 0xe6eeff, transparent: true, opacity: 0, toneMapped: false });
+let house, furn, roomLights, walker, curLayout = LAYOUT, wallMats, floorMats, drag = null;
+
+function makeHouse(layout) {
+  W = layout.footprint.width_ft; D = layout.footprint.depth_ft;
+  fitSun(sun, W, D);
+  if (house) {
+    house.group.removeFromParent();
+    house.group.traverse((o) => { o.geometry?.dispose(); });
+  }
+  house = buildHouse(layout, {
+    floorColor: (r) => (r.type === "hall" ? 0x22389c : 0x1c308f), wallColor: 0xf1f5ff, exteriorWallColor: 0xe3ebff,
+    glassColor: 0x9cc0ff, frameColor: 0xe3ebff, // door headers read as wall, not a blue block
+  });
+  wallMats = new Set(); floorMats = new Set();
+  for (const w of house.walls) {
+    w.scale.y = 0.001; wallMats.add(w.material);
+    w.add(new THREE.LineSegments(new THREE.EdgesGeometry(w.geometry), lineMat));
+  }
+  for (const f of Object.values(house.floors)) {
+    floorMats.add(f.material); f.userData.base = f.material.color.getHex(); f.userData.tone = FLOOR_TONE(f.userData.room.type);
+    f.add(new THREE.LineSegments(new THREE.EdgesGeometry(f.geometry), lineMat));
+  }
+  for (const m of [...wallMats, ...floorMats]) { m.transparent = true; m.opacity = 0; m.depthWrite = false; }
+  for (const m of [...house.windows, ...house.doorFrames]) m.visible = false;
+  for (const c of house.ceilings.children) c.castShadow = true;
+
+  furn = buildFurniture(layout, FSTYLE, { roundedBox: RoundedBoxGeometry, items: true, arrangement: KEEP_ARRANGEMENT }); KEEP_ARRANGEMENT = null;
+  for (const m of furn.pieces) {
+    m.material = m.material.clone();
+    m.add(new THREE.LineSegments(new THREE.EdgesGeometry(m.geometry, 30),
+      new THREE.LineBasicMaterial({ color: 0xeaf1ff, transparent: true, opacity: 0, toneMapped: false })));
+  }
+  for (const g of Object.values(furn.byRoom)) g.visible = false;
+  house.group.add(furn.group);
+
+  // warm room lights, walkthrough only
+  roomLights = new THREE.Group(); roomLights.visible = false;
+  for (const r of layout.rooms) {
+    const l = new THREE.PointLight(0xffd6a0, r.type === "hall" ? 26 : 40, 0, 2);
+    const c = house.roomCenter(r.id); l.position.set(c.x, 6.8, c.z); // below head-of-ceiling so no hot spot
+    roomLights.add(l);
+  }
+  house.group.add(roomLights);
+  house.group.visible = false; dio.add(house.group);
+  curLayout = layout;
+  walker?.dispose();
+  walker = createWalker(camera, renderer.domElement, layout, { extraBoxes: furn.boxes });
+  if (!drag) drag = createFurnitureDrag({
+    camera, dom: renderer.domElement, furniture: furn, layout, controls, ringColor: 0x2b45f5,
+    onHover: (it) => { if (it) controls.autoRotate = false; },
+    onPick: ({ item }) => { pRes.enabled = false; controls.autoRotate = false; toast(`Moving the ${itemLabel(item).toLowerCase()}…`); },
+    onMove: ({ item, roomId }) => toast(`${itemLabel(item)} → ${roomById(roomId, curLayout).name}`),
+    onDrop: onFurnitureDrop,
+  });
+  else drag.setTarget(furn, layout);
+  drag.enabled = false;
+  refreshPlans();
+}
+
+// everything finished and opaque (used after edits)
+function solidify() {
+  house.group.visible = true;
+  for (const w of house.walls) w.scale.y = 1;
+  for (const m of [...wallMats, ...floorMats]) { m.transparent = false; m.opacity = 1; m.depthWrite = true; m.needsUpdate = true; }
+  for (const f of Object.values(house.floors)) f.material.color.setHex(f.userData.tone);
+  for (const m of [...house.windows, ...house.doorFrames]) m.visible = true;
+  for (const g of Object.values(furn.byRoom)) g.visible = true;
+  for (const m of furn.pieces) m.children[0].material.opacity = 0.3;
+  lineMat.opacity = 0.25;
+}
+
+function settlePiece(m) {
+  m.userData.settled = true; m.scale.y = 1;
+  Object.assign(m.material, { opacity: 1, transparent: false, depthWrite: true }); m.material.needsUpdate = true;
+  m.children[0].material.opacity = 0.3;
+}
+// finish any furniture still animating (e.g. walking in before the last room settles)
+const settleAll = () => {
+  for (const g of Object.values(furn.byRoom)) g.visible = true;
+  for (const it of furn.items) { it.userData.settled = true; it.position.y = 0; it.scale.setScalar(1); }
+  furn.pieces.forEach(settlePiece);
+};
+// a room's furniture: each piece is inked as an outline while it drops in with a soft bounce,
+// then fills with colour; pieces land one after another
+function furnishRoom(id) {
+  const g = furn.byRoom[id]; if (!g) return Promise.resolve();
+  g.visible = true;
+  return Promise.all(g.children.filter((it) => it.userData.kind === "item").map((it, i) => {
+    const meshes = []; it.traverse((o) => { if (o.isMesh) meshes.push(o); });
+    for (const m of meshes) {
+      const mat = m.material; mat.transparent = true; mat.opacity = 0; mat.depthWrite = false; mat.needsUpdate = true;
+      m.children[0].material.opacity = 0; m.userData.settled = false;
+    }
+    const lift = it.userData.wall ? 0.8 : 3.2;
+    it.userData.settled = false; it.position.y = lift; it.scale.setScalar(0.94);
+    return tween(760 * M, (t) => {
+      if (it.userData.settled) return;
+      it.position.y = lift * Math.abs(1 - t); // spring overshoot reads as a small bounce off the floor
+      it.scale.setScalar(0.94 + 0.06 * Math.min(1, t));
+      for (const m of meshes) if (!m.userData.settled) m.children[0].material.opacity = Math.min(1, t * 1.6);
+    }, ease.drop, i * 85 * M)
+      .then(() => tween(480 * M, (t) => { for (const m of meshes) if (!m.userData.settled) { m.material.opacity = t; m.children[0].material.opacity = 1 - t * 0.7; } }, ease.settle, 40 * M))
+      .then(() => { it.userData.settled = true; it.position.y = 0; it.scale.setScalar(1); meshes.forEach(settlePiece); });
+  }));
+}
+
+// ---------- drag & drop furniture (result view) ----------
+const LABELS = { planter: "Plant", "media console": "TV console", "coffee table": "Coffee table", table: "Dining table", counters: "Counters",
+  "side counter": "Counter", "closet shelving": "Shelving", bed: "Bed", sofa: "Sofa", nightstand: "Nightstand", "floor lamp": "Floor lamp" };
+const itemLabel = (it) => { const n = it.userData.name ?? "piece"; return LABELS[n] ?? n.charAt(0).toUpperCase() + n.slice(1); };
+let toastT = 0;
+function toast(text, ms = 1800) {
+  const el = $("#toast"); el.textContent = text; el.classList.add("on");
+  clearTimeout(toastT); toastT = setTimeout(() => el.classList.remove("on"), ms);
+}
+function onFurnitureDrop({ item, from, to, cancelled }) {
+  const name = itemLabel(item), fromR = roomById(from, curLayout), toR = roomById(to, curLayout);
+  toast(cancelled ? `${name} put back` : from === to ? `${name} moved within the ${toR.name}` : `${name} moved to ${toR.name}`, 2400);
+  // after it lands: redraw the plans, rebuild walk collision, refresh the two affected previews
+  setTimeout(() => {
+    furn.recomputeBoxes();
+    walker?.dispose(); walker = createWalker(camera, renderer.domElement, curLayout, { extraBoxes: furn.boxes });
+    refreshPlans();
+    document.querySelectorAll(".rcard").forEach((b) => { if (b.dataset.id === from || b.dataset.id === to) mini?.swap(b.querySelector(".rc-v"), previewOf(b.dataset.id)); });
+    if (document.body.dataset.state === "result") pRes.enabled = !RM;
+  }, RM ? 160 : 720);
+  void fromR;
+}
+
+// ---------- 2D plans (final sheet + minimap), furniture drawn as outlines ----------
+let me, hd;
+function furnitureSVG() {
+  house.group.updateMatrixWorld(true);
+  const skip = new Set(["countertop", "island top", "counter", "desk lamp", "pendant", "chair back", "sofa back", "duvet", "tv",
+    "throw", "cushion", "art", "towel", "backsplash", "books", "fruit bowl", "vase", "shade", "lamp", "monitor", "hanging clothes", "basket", "plant"]);
+  const b = new THREE.Box3(), inv = house.group.matrixWorld.clone().invert();
+  return furn.pieces.filter((m) => !skip.has(m.userData.name) && m.parent?.visible !== false).map((m) => {
+    b.setFromObject(m).applyMatrix4(inv); // house space, so the sway of the diorama never skews the plan
+    const x = b.min.x + W / 2, y = b.min.z + D / 2, w = b.max.x - b.min.x, h = b.max.z - b.min.z;
+    const rug = /rug|runner/.test(m.userData.name);
+    return `<rect class="p-furn${rug ? " rug" : ""}" x="${x.toFixed(2)}" y="${y.toFixed(2)}" width="${w.toFixed(2)}" height="${h.toFixed(2)}"/>`;
+  }).join("");
+}
+function refreshPlans() {
+  const fsvg = furnitureSVG();
+  $("#final").innerHTML = planSVG(curLayout, { pad: 2.5 });
+  $("#final .p-rooms").insertAdjacentHTML("afterend", `<g class="p-furns">${fsvg}</g>`);
+  $("#mini").innerHTML = planSVG(curLayout, { labels: false, pad: 1 });
+  const miniSvg = $("#mini svg");
+  miniSvg.querySelector(".p-rooms").insertAdjacentHTML("afterend", `<g class="p-furns">${fsvg}</g>`);
+  me = document.createElementNS(ns, "circle"); me.setAttribute("r", "1"); me.classList.add("me");
+  hd = document.createElementNS(ns, "line"); hd.classList.add("hd");
+  miniSvg.append(hd, me);
+}
+
+// ---------- static UI pieces ----------
+$("#phases").innerHTML = PHASES.map((p, i) => `<li data-p="${p.id}" title="${i + 1}. ${p.label}"></li>`).join("");
+$("#rules").innerHTML = RULES.map((r) => `<li data-rule="${r.id}"><i></i><span>${r.label}</span><em></em></li>`).join("");
+makeHouse(LAYOUT);
+
+// ---------- plan drawing (loading) ----------
+const planSheet = () => { $("#plan").innerHTML = `<svg viewBox="-4 -5 ${W + 8} ${D + 10}"><g id="rooms"></g><circle class="pencil" id="pencil" r=".35" cx="0" cy="0" opacity="0"/></svg>`; };
+planSheet();
+const els = {}, cur = {};
+// The solver's first pass, before the fix round. Derived from the script's reflow events: if Dining is
+// reflowed and service rooms sit beside it, the first pass had them between Kitchen and Dining; anything
+// else reflowed is drawn a little short and grows into place.
+let FIRST = {}, REFLOW = {};
+function planFirstPass(layout, script) {
+  FIRST = {}; REFLOW = {};
+  const re = [...new Set(script.filter((e) => e.type === "place" && e.reflow).map((e) => e.roomId))];
+  const din = roomById("dining", layout);
+  if (re.includes("dining") && din) {
+    const svc = layout.rooms.filter((r) => Math.abs(r.x - (din.x + din.w)) < 0.01 && r.y < din.y + din.h && /bathroom|laundry/.test(r.type));
+    if (svc.length) {
+      const sw = svc[0].w;
+      FIRST[din.id] = { x: din.x + sw, y: din.y, w: din.w, h: din.h };
+      svc.forEach((r) => (FIRST[r.id] = { x: din.x, y: r.y, w: r.w, h: r.h }));
+      const lead = re.find((id) => id !== "dining"); if (lead) REFLOW[lead] = svc.map((r) => r.id);
+    } else FIRST[din.id] = { x: din.x, y: din.y, w: din.w * 0.8, h: din.h };
+    REFLOW.dining = ["dining"];
+  }
+  for (const id of re) if (!REFLOW[id]) {
+    const r = roomById(id, layout); if (!r) continue;
+    if (!FIRST[id]) FIRST[id] = { x: r.x, y: r.y, w: r.w * 0.86, h: r.h };
+    REFLOW[id] = [id];
+  }
+}
+function dimsMarkup(g) {
+  const top = g.y === 0, bottom = Math.abs(g.y + g.h - D) < 0.01;
+  if (!top && !bottom) return "";
+  const y = top ? -1.6 : D + 1.6, ty = top ? -2.15 : D + 2.75, a = g.x + 0.15, b = g.x + g.w - 0.15;
+  const tick = (x) => `<line x1="${x - 0.35}" y1="${y + 0.35}" x2="${x + 0.35}" y2="${y - 0.35}"/><line x1="${x}" y1="${y - 0.6}" x2="${x}" y2="${y + 0.6}"/>`;
+  return `<line x1="${a}" y1="${y}" x2="${b}" y2="${y}"/>${tick(a)}${tick(b)}${g.w >= 4 ? `<text x="${(a + b) / 2}" y="${ty}">${fmtFt(g.w)}</text>` : ""}`;
+}
+function setGeom(id, g) {
+  const { grp, r } = els[id]; cur[id] = g;
+  for (const rc of grp.querySelectorAll("rect")) { rc.setAttribute("x", g.x); rc.setAttribute("y", g.y); rc.setAttribute("width", g.w); rc.setAttribute("height", g.h); }
+  const cx = g.x + g.w / 2, cy = g.y + g.h / 2, thin = g.w < 6;
+  const nm = grp.querySelector(".nm"), sz = grp.querySelector(".sz");
+  nm.textContent = r.name; nm.setAttribute("x", cx); nm.setAttribute("y", thin ? cy : cy - 0.2);
+  nm.setAttribute("transform", thin ? `rotate(-90 ${cx} ${cy})` : "");
+  sz.textContent = thin || r.type === "hall" ? "" : `${Math.round(g.w * g.h)} sq ft`;
+  sz.setAttribute("x", cx); sz.setAttribute("y", cy + 1.3);
+  grp.querySelector(".dim").innerHTML = r.type === "hall" ? "" : dimsMarkup(g);
+}
+function placeRoom(id) {
+  const r = roomById(id, curLayout); if (!r) return;
+  const g = FIRST[id] ? { ...FIRST[id] } : { x: r.x, y: r.y, w: r.w, h: r.h };
+  const grp = document.createElementNS(ns, "g"); grp.classList.add("rm", "active");
+  grp.innerHTML = `<rect class="fill"/><rect class="edge" pathLength="1"/><g class="dim"></g><text class="nm"></text><text class="sz"></text>`;
+  $("#rooms").appendChild(grp); els[id] = { grp, r }; setGeom(id, g);
+  requestAnimationFrame(() => requestAnimationFrame(() => grp.classList.add("drawn")));
+  setTimeout(() => grp.classList.remove("active"), 900 * M);
+  // pencil tip travels around the new rectangle
+  const pen = $("#pencil"); pen.setAttribute("opacity", "1");
+  const pts = [[g.x, g.y], [g.x + g.w, g.y], [g.x + g.w, g.y + g.h], [g.x, g.y + g.h], [g.x, g.y]];
+  tween(800 * M, (t) => {
+    const s = Math.min(3.999, t * 4), i = Math.floor(s), f = s - i;
+    pen.setAttribute("cx", pts[i][0] + (pts[i + 1][0] - pts[i][0]) * f);
+    pen.setAttribute("cy", pts[i][1] + (pts[i + 1][1] - pts[i][1]) * f);
+  }, (t) => t).then(() => pen.setAttribute("opacity", "0"));
+}
+function reflow(id) {
+  for (const k of REFLOW[id] ?? [id]) {
+    if (!els[k] || !cur[k]) continue;
+    const from = { ...cur[k] }, to = roomById(k, curLayout);
+    els[k].grp.classList.add("active"); setTimeout(() => els[k].grp.classList.remove("active", "bad"), 1100 * M);
+    tween(1000 * M, (t) => setGeom(k, { x: from.x + (to.x - from.x) * t, y: from.y + (to.y - from.y) * t, w: from.w + (to.w - from.w) * t, h: from.h + (to.h - from.h) * t }), ease.spring);
+  }
+}
+
+const to0 = () => { const a = innerWidth / innerHeight; return (a < 1 ? 1.1 / a : 1) * SK(); };
+// ---------- the build ----------
+let started = 0, duration = 1, run = null, rounds = 0, drift = false;
+const thought = (text, cls = "") => {
+  const li = document.createElement("li"); li.textContent = text; if (cls) li.className = cls;
+  $("#thoughts").appendChild(li);
+  while ($("#thoughts").children.length > 9) $("#thoughts").firstChild.remove();
+};
+function setPhase(id) {
+  const idx = PHASES.findIndex((p) => p.id === id);
+  if (idx < 0) return;
+  document.querySelectorAll("#phases li").forEach((li, i) => { li.className = i < idx ? "done" : i === idx ? "now" : ""; });
+  $("#tbStatus").textContent = PHASES[idx].label;
+  $("#tbStep").textContent = `${idx + 1} of ${PHASES.length}`;
+  $("#sheetno").textContent = `Sheet A-10${idx + 1} · ${PHASES[idx].label.toLowerCase()}`;
+}
+function onEvent(e) {
+  if (e.type === "phase") setPhase(e.id);
+  else if (e.type === "thought") thought(e.text, e.text.startsWith("All 7") ? "ok" : "");
+  else if (e.type === "room") {
+    const li = document.createElement("li"); li.innerHTML = `<b>${e.room.name}</b><span>${e.room.target_sqft} sq ft</span>`;
+    $("#program").appendChild(li);
+  } else if (e.type === "place") e.reflow ? reflow(e.roomId) : placeRoom(e.roomId);
+  else if (e.type === "check") {
+    const li = document.querySelector(`#rules li[data-rule="${e.rule}"]`);
+    li.classList.remove("fail"); li.classList.add(e.pass ? "pass" : "fail");
+    if (!e.pass) {
+      li.querySelector("em").textContent = e.message;
+      const bad = e.rule === "kitchen_adjacent" ? ["kitchen", "dining"] : Object.keys(FIRST);
+      bad.forEach((id) => els[id]?.grp.classList.add("bad"));
+      thought(`${RULES.find((r) => r.id === e.rule).label}: no. ${e.message}`, "fix");
+    } else if (e.round) { li.classList.add("fixed"); li.querySelector("em").textContent = `Fixed in round ${e.round - 1}`; }
+  } else if (e.type === "fix") {
+    rounds = e.round; $("#tbRounds").textContent = rounds;
+    thought(`Round ${e.round} fix: ${e.note}`, "fix");
+  } else if (e.type === "walls") raise();
+  else if (e.type === "furnish") furnishRoom(e.roomId);
+  else if (e.type === "done") setTimeout(() => finish(e.stats), 900 * M);
+}
+
+async function raise() {
+  $("#plan").style.opacity = "0";
+  idle.visible = false; house.group.visible = true;
+  camera.position.set(0, 96 * Math.max(1, to0()), 0.0001); camera.lookAt(0, 0, 0);
+  tween(700 * M, (t) => { lineMat.opacity = t; for (const m of floorMats) m.opacity = t; });
+  // the lot rises up out of the cloud sea underneath the plan as it lifts off the sheet
+  isle.group.visible = true; isle.group.position.y = -80;
+  tween(2200 * M, (t) => (isle.group.position.y = -80 + (80 + ISLAND_Y) * t), ease.outCubic, 200 * M);
+  sea.group.visible = haze.group.visible = true;
+  tween(1600 * M, (t) => { sea.setOpacity(t); haze.setOpacity(t); }, ease.outCubic, 600 * M);
+  // spherical path so north stays up while tilting (no in-plane spin)
+  const to = new THREE.Spherical().setFromVector3(viewPos()), r0 = 96 * Math.max(1, to0());
+  const sph = new THREE.Spherical();
+  tween(2000 * M, (t) => {
+    if (document.body.dataset.state !== "loading") return; // never fight the walker / orbit controls
+    sph.set(r0 + (to.radius - r0) * t, 0.0001 + (to.phi - 0.0001) * t, to.theta * t);
+    camera.position.setFromSpherical(sph); camera.lookAt(0, 0, 0);
+  }, ease.settle, 250 * M).then(() => { drift = !RM; });
+  // walls extrude room by room, wireframe first
+  const order = curLayout.rooms.map((r) => r.id);
+  house.walls.forEach((w) => {
+    const i = Math.max(0, order.indexOf(w.userData.roomId));
+    tween(800 * M, (t) => { w.scale.y = Math.max(0.001, t); }, ease.spring, (500 + i * 120) * M);
+  });
+  await tween(600 * M, (t) => { for (const m of wallMats) m.opacity = t; }, ease.outCubic, 2100 * M);
+  for (const m of [...wallMats, ...floorMats]) { m.transparent = false; m.depthWrite = true; m.needsUpdate = true; }
+  for (const m of [...house.windows, ...house.doorFrames]) m.visible = true;
+  tween(500 * M, (t) => (lineMat.opacity = 1 - t * 0.75));
+  // ink -> rendered: the navy sheet floors warm into timber and tile
+  const fl = Object.values(house.floors), navy = new THREE.Color(), tone = new THREE.Color();
+  tween(1100 * M, (t) => fl.forEach((f) => f.material.color.lerpColors(navy.setHex(f.userData.base), tone.setHex(f.userData.tone), t)), ease.settle);
+}
+
+function finish(stats) {
+  run = null; drift = false; settleAll();
+  $("#tbStatus").textContent = "Ready to walk through";
+  $("#tbStep").textContent = "Done";
+  $("#sheetno").textContent = "Sheet A-201 · final";
+  document.querySelectorAll("#phases li").forEach((li) => (li.className = "done"));
+  $("#prog").style.width = "100%";
+  $("#tbTime").textContent = `${stats.seconds.toFixed(1)} s`;
+  const pp = plan.parsed;
+  $("#rh").innerHTML = `${pp.beds ? `${pp.beds} bed, ${pp.baths} bath` : "Studio"}<br />${stats.sqft.toLocaleString()} sq ft`;
+  $("#stats").innerHTML = [
+    [stats.rooms, "rooms"], [stats.sqft.toLocaleString(), "sq ft"], [`${stats.rulesPassed}/7`, "rules pass"],
+    [stats.rounds, "fix round"], [`${stats.seconds}s`, "prompt to house"], [furn.items.length, "pieces furnished"],
+  ].map(([b, s]) => `<div><b>${b}</b><span>${s}</span></div>`).join("");
+  setState("result");
+  controls.target.set(0, 0, 0); controls.enabled = true; controls.autoRotate = !RM; controls.update();
+  pRes.enabled = !RM;
+  drag.enabled = true;
+  buildRoomCards();
+}
+
+// ---------- room previews: DOM-pinned 3D dioramas that tilt toward the pointer ----------
+// the four most telling rooms this plan has
+const CARD_PREF = ["living", "kitchen", "primary_bedroom", "sleep", "office", "dining", "bedroom_2", "flex"];
+const cardRooms = () => CARD_PREF.filter((id) => roomById(id, curLayout)).slice(0, 4);
+let mini = null, focused = null;
+// walk-mode floor tones read better at thumbnail size than the navy sheet floors
+const PREVIEW_FLOOR = (t) => (WET.has(t) ? 0xdfe3ea : t === "hall" ? 0xa98b68 : 0xb99a76);
+function previewOf(id) {
+  const g = roomDiorama(house, furn, id, { wallHeight: 3.4 });
+  // the house's edge lines share one material; give the preview its own copies so the
+  // mini stage's per-frame opacity writes never touch the main model
+  g.traverse((o) => {
+    if (o.isLineSegments) { o.material = o.material.clone(); o.material.opacity = 0.35; }
+    else if (o.material) { o.material.transparent = false; o.material.opacity = 1; o.material.depthWrite = true; }
+  });
+  const fl = g.children[0]; if (fl?.material) fl.material.color.setHex(PREVIEW_FLOOR(fl.userData.room?.type));
+  return g;
+}
+const cardSize = (id) => { const r = roomById(id, curLayout); return `${fmtFt(r.w)} × ${fmtFt(r.h)}`; };
+function buildRoomCards() {
+  mini ??= createMiniStage({ z: 5, light: 0xeef3ff });
+  mini.clear(); focused = null;
+  const box = $("#rooms3d");
+  box.innerHTML = cardRooms().map((id) =>
+    `<button class="rcard" type="button" data-id="${id}" aria-pressed="false"><span class="rc-v"></span><span class="rc-l">${roomById(id, curLayout).name}<small>${cardSize(id)}</small></span></button>`).join("");
+  box.querySelectorAll(".rcard").forEach((b) => mini.add(b.querySelector(".rc-v"), previewOf(b.dataset.id), { baseYaw: 0.55 }));
+}
+// focus a room in the main model; clicking it again goes back to the whole house
+function focusRoom(id) {
+  if (document.body.dataset.state !== "result") return;
+  focused = focused === id ? null : id;
+  document.querySelectorAll(".rcard").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === focused)));
+  document.body.dataset.view = "3d";
+  document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === "3d")));
+  controls.autoRotate = false;
+  const c = focused ? house.roomCenter(focused) : new THREE.Vector3();
+  const r = focused ? roomById(focused, curLayout) : null;
+  const k = focused ? Math.max(r.w, r.h) / 14 : 1;
+  const toPos = focused ? c.clone().add(new THREE.Vector3(16 * k, 46 * k, 26 * k)) : viewPos();
+  const p0 = camera.position.clone(), t0 = controls.target.clone();
+  tween(1000 * M, (t) => { camera.position.lerpVectors(p0, toPos, t); controls.target.lerpVectors(t0, c, t); controls.update(); }, ease.settle);
+}
+$("#rooms3d").addEventListener("click", (e) => { const b = e.target.closest(".rcard"); if (b) focusRoom(b.dataset.id); });
+
+function reset(next = plan) {
+  run?.cancel(); run = null; rounds = 0; drift = false;
+  plan = next;
+  $("#rooms").innerHTML = ""; $("#thoughts").innerHTML = ""; $("#program").innerHTML = "";
+  for (const k in els) delete els[k];
+  document.querySelectorAll("#rules li").forEach((li) => { li.className = ""; li.querySelector("em").textContent = ""; });
+  document.querySelectorAll("#phases li").forEach((li) => (li.className = ""));
+  $("#tbRounds").textContent = "0"; $("#tbStep").textContent = `0 of ${PHASES.length}`;
+  $("#prog").style.width = "0"; $("#plan").style.opacity = "1";
+  $("#editlog").textContent = ""; $("#editlog").className = "";
+  lineMat.opacity = 0;
+  makeHouse(plan.layout);
+  planSheet();
+  mini?.clear(); $("#rooms3d").innerHTML = "";
+  rebuildIsle(plan.layout); isle.group.position.y = ISLAND_Y;
+  controls.enabled = false; controls.autoRotate = false;
+}
+
+let diving = false;
+$("#promptForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (diving || document.body.dataset.state !== "landing") return;
+  diving = true;
+  const p = $("#prompt").value.trim() || DEFAULT_PROMPT;
+  // drop off the cover sheet: the camera dives past the island into the cloud sea, ink-wash mist
+  // closes over the screen, and the drafting sheet is waiting underneath
+  document.body.classList.add("diving");
+  const dive = cameraDive(camera, { to: new THREE.Vector3(14, -58, 36), look: new THREE.Vector3(0, -95, 0), ms: 1700 * M, fovPunch: 16, roll: 0.1 });
+  await new Promise((r) => setTimeout(r, 950 * M));
+  await mist.cover(650 * M);
+  await dive;
+  reset(p === DEFAULT_PROMPT ? DEFAULT_PLAN : generate(p));
+  steadyDio(0); camera.fov = 35;
+  sketchIsle.group.visible = false; idle.visible = false;
+  sea.setOpacity(0); haze.setOpacity(0);
+  camera.position.set(0, 96 * Math.max(1, to0()), 0.0001); camera.lookAt(0, 0, 0);
+  $("#echo").textContent = p;
+  $("#tbProject").textContent = p;
+  document.body.classList.remove("diving");
+  setState("loading");
+  mist.reveal(900 * M);
+  const script = buildScript(p, plan);
+  planFirstPass(curLayout, script);
+  run = playScript(script, onEvent, { speed: RM ? 3 : 1 });
+  duration = run.duration; started = performance.now();
+  diving = false;
+});
+
+$("#again").addEventListener("click", async () => {
+  drag.enabled = false;
+  await mist.cover(600 * M);
+  reset(); idle.visible = true; sketchIsle.group.visible = true;
+  sea.setOpacity(1); haze.setOpacity(1);
+  setState("landing");
+  camera.fov = 35; camera.position.copy(coverPos()); camera.lookAt(COVER_LOOK); frame();
+  pLand.enabled = true;
+  $("#sheetno").textContent = "Sheet A-000 · cover";
+  mist.reveal(900 * M); $("#prompt").focus();
+});
+
+// view toggle
+document.querySelectorAll(".seg button").forEach((b) => b.addEventListener("click", () => {
+  document.body.dataset.view = b.dataset.v;
+  document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x === b)));
+}));
+
+// ---------- edit by talking: only the named room and its row neighbours are redrawn ----------
+$("#editForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const text = $("#editIn").value.trim() || "Make the kitchen bigger";
+  const log = $("#editlog");
+  const res = editLayout(curLayout, text);
+  if (!res) {
+    log.className = "warn";
+    log.textContent = `I can resize one room at a time. Try “make the kitchen bigger” or “make bedroom 2 smaller”.`;
+    return;
+  }
+  const btn = $("#editForm button"); btn.disabled = true; drag.enabled = false;
+  KEEP_ARRANGEMENT = furn?.getArrangement?.() ?? null; // moved furniture survives the edit
+  const names = res.changed.map((id) => roomById(id, res.layout).name).join(", ");
+  log.className = ""; log.textContent = `Redrawing ${names}. Everything else stays put…`;
+  // the edited room's target becomes its new size; recheck the size rule for the rest
+  const edited = res.layout.rooms.find((r) => r.id === res.changed[0]);
+  edited.target_sqft = edited.w * edited.h;
+  const off = res.layout.rooms.filter((r) => res.changed.includes(r.id) && r.type !== "hall" && Math.abs(r.w * r.h - r.target_sqft) / r.target_sqft > 0.1);
+  makeHouse(res.layout); solidify();
+  const changed = new Set(res.changed);
+  const cw = house.walls.filter((w) => changed.has(w.userData.roomId));
+  for (const w of cw) w.scale.y = 0.001;
+  for (const id of changed) furn.byRoom[id].visible = false;
+  for (const id of changed) {
+    const f = house.floors[id]; f.material.color.set(0x2b45f5);
+    tween(1400 * M, (t) => f.material.color.lerpColors(new THREE.Color(0x2b45f5), new THREE.Color(f.userData.tone), t), ease.settle, 500 * M);
+    $(`#final .p-room[data-id="${id}"]`)?.classList.add("flash");
+  }
+  await tween(850 * M, (t) => cw.forEach((w) => (w.scale.y = Math.max(0.001, t))), ease.spring, 150 * M);
+  await Promise.all([...changed].map((id) => furnishRoom(id)));
+  for (const m of furn.pieces) m.children[0].material.opacity = 0.3;
+  document.querySelectorAll("#final .flash").forEach((r) => r.classList.remove("flash"));
+  // previews: changed rooms drop out and the redrawn room swaps in
+  document.querySelectorAll(".rcard").forEach((b) => {
+    const id = b.dataset.id;
+    b.querySelector(".rc-l small").textContent = cardSize(id);
+    if (!changed.has(id)) return;
+    b.classList.add("redo"); setTimeout(() => b.classList.remove("redo"), 2600);
+    mini?.swap(b.querySelector(".rc-v"), previewOf(id));
+  });
+  if (focused && changed.has(focused)) { const f = focused; focused = null; focusRoom(f); }
+  log.textContent = off.length
+    ? `${res.note} Size check flags ${off.map((r) => r.name).join(", ")} — more than 10% off target.`
+    : `${res.note} All 7 rules still pass.`;
+  log.className = off.length ? "warn" : "ok";
+  $("#editIn").value = ""; btn.disabled = false; drag.enabled = document.body.dataset.state === "result";
+});
+
+// ---------- walkthrough ----------
+function walkLook(on) {
+  house.ceilings.visible = on; roomLights.visible = on;
+  // navy ground light turns ceilings blue indoors, so warm it up while walking
+  hemi.intensity = on ? 1.15 : 1.5; hemi.color.setHex(on ? 0xfff3e2 : 0xe4edff); hemi.groundColor.setHex(on ? 0xd2c6b4 : 0x0d1a5c);
+  sun.intensity = on ? 1.1 : 1.7;
+  // outside the windows: daylight sky instead of the drafting sheet
+  scene.background = on ? new THREE.Color(0xc4d3ef) : sheetBg;
+  scene.fog.color.setHex(on ? 0xc4d3ef : 0x13226b);
+  haze.group.visible = !on;
+  for (const f of Object.values(house.floors)) f.material.color.setHex(f.userData.tone);
+  lineMat.opacity = on ? 0.08 : 0.25;
+  for (const m of furn.pieces) m.children[0].material.opacity = on ? 0.12 : 0.3;
+}
+function enterWalk() {
+  drag.enabled = false;
+  controls.enabled = false; controls.autoRotate = false;
+  settleAll();
+  steadyDio(0); // collision boxes assume the house sits at the origin
+  document.body.dataset.view = "3d";
+  setState("walk");
+  camera.fov = 72; camera.updateProjectionMatrix(); frame();
+  walkLook(true);
+  walker.enter();
+  renderer.domElement.focus?.();
+}
+function exitWalk() {
+  walker.exit(); camera.fov = 35; walkLook(false);
+  setState("result");
+  document.querySelectorAll(".seg button").forEach((x) => x.setAttribute("aria-pressed", String(x.dataset.v === "3d")));
+  camera.position.copy(viewPos()); camera.lookAt(0, 0, 0); controls.target.set(0, 0, 0);
+  controls.enabled = true; controls.update(); $("#walkBtn").focus();
+  focused = null; document.querySelectorAll(".rcard").forEach((b) => b.setAttribute("aria-pressed", "false"));
+  pRes.enabled = !RM; drag.enabled = true;
+}
+$("#walkBtn").addEventListener("click", enterWalk);
+$("#exitWalk").addEventListener("click", exitWalk);
+addEventListener("keydown", (e) => { if (e.key === "Escape" && document.body.dataset.state === "walk") exitWalk(); });
+
+// ---------- loop ----------
+const clock = new THREE.Clock();
+let lastRoom = "";
+function loop() {
+  const dt = Math.min(clock.getDelta(), 0.05), now = performance.now();
+  tickTweens(now);
+  const st = document.body.dataset.state;
+  pLand.update(dt); pRes.update(dt); drag?.update(dt);
+  if (st !== "walk") { sea.update(RM ? 0 : dt); haze.update(RM ? 0 : dt); } // dt 0 still applies fades
+  if (st === "landing") sketchIsle.update(RM ? 0 : dt);
+  else if (isle.group.visible && st !== "walk") isle.update(RM ? 0 : dt);
+  if (st === "loading" && run) {
+    const el = (now - started) / 1000;
+    $("#tbTime").textContent = `${el.toFixed(1)} s`;
+    $("#prog").style.width = `${Math.min(100, ((now - started) / duration) * 100)}%`;
+    if (drift) { camera.position.applyAxisAngle(new THREE.Vector3(0, 1, 0), dt * 0.06); camera.lookAt(0, 0, 0); }
+  }
+  if (st === "walk") {
+    walker.update(dt);
+    const p = walker.planPos();
+    me.setAttribute("cx", p.x); me.setAttribute("cy", p.y);
+    hd.setAttribute("x1", p.x); hd.setAttribute("y1", p.y);
+    hd.setAttribute("x2", p.x - Math.sin(p.heading) * 3); hd.setAttribute("y2", p.y - Math.cos(p.heading) * 3);
+    const r = walker.roomAt(); const name = r ? r.name : "Outside";
+    if (name !== lastRoom) { $("#roomName").textContent = name; lastRoom = name; }
+  } else if (controls.enabled) controls.update();
+  if (!(st === "result" && document.body.dataset.view === "2d")) renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+frame(); loop();
+// Site view: "On site" button next to Walk through (Google 3D tiles; see core/site.js).
+addSiteButton($("#walkBtn"), () => curLayout);
+addPhotorealButton($("#walkBtn"), () => ({ layout: curLayout, furniture: furn })); // Blender Cycles 360° tour, renders automatically
+</script>
+</body>
+</html>
