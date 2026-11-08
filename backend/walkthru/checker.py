@@ -8,15 +8,17 @@ Claude, so name the room and say what is wrong and by how much.
 from __future__ import annotations
 
 from collections import deque
+import math
 from typing import Callable
 
-from .schema import EXTERIOR, Check, Layout, Room
+from .schema import EXTERIOR, Check, Layout, Room, RoomProgram, RoomSpec
 
 EPS = 0.01
 MIN_HALL_W = 3.0
 MIN_DOOR_W = 2.67
 SIZE_TOL = 0.10
 BEDROOMS = {"bedroom", "primary_bedroom"}
+GRID = 0.5
 
 
 # ---------- geometry helpers ----------
@@ -42,12 +44,47 @@ def touches_exterior(r: Room, layout: Layout) -> bool:
     return r.x < EPS or r.y < EPS or abs(r.x + r.w - fp.width_ft) < EPS or abs(r.y + r.h - fp.depth_ft) < EPS
 
 
+def _door_valid(d, layout: Layout) -> bool:
+    if len(d.between) != 2 or d.between[0] == d.between[1] or d.width_ft <= 0:
+        return False
+    a, b = d.between
+    if a == EXTERIOR or b == EXTERIOR:
+        r = layout.room(b if a == EXTERIOR else a)
+        if r is None:
+            return False
+        segments = []
+        fp = layout.footprint
+        if abs(r.y) < EPS: segments.append(("h", 0, r.x, r.x + r.w))
+        if abs(r.y + r.h - fp.depth_ft) < EPS: segments.append(("h", fp.depth_ft, r.x, r.x + r.w))
+        if abs(r.x) < EPS: segments.append(("v", 0, r.y, r.y + r.h))
+        if abs(r.x + r.w - fp.width_ft) < EPS: segments.append(("v", fp.width_ft, r.y, r.y + r.h))
+    else:
+        ra, rb = layout.room(a), layout.room(b)
+        if ra is None or rb is None:
+            return False
+        segments = []
+        if abs(ra.x + ra.w - rb.x) < EPS or abs(rb.x + rb.w - ra.x) < EPS:
+            segments.append(("v", rb.x if abs(ra.x + ra.w - rb.x) < EPS else ra.x,
+                             max(ra.y, rb.y), min(ra.y + ra.h, rb.y + rb.h)))
+        if abs(ra.y + ra.h - rb.y) < EPS or abs(rb.y + rb.h - ra.y) < EPS:
+            segments.append(("h", rb.y if abs(ra.y + ra.h - rb.y) < EPS else ra.y,
+                             max(ra.x, rb.x), min(ra.x + ra.w, rb.x + rb.w)))
+    for axis, line, lo, hi in segments:
+        center = d.x if axis == "h" else d.y
+        cross = d.y if axis == "h" else d.x
+        if abs(cross - line) < EPS and center - d.width_ft / 2 >= lo - EPS and center + d.width_ft / 2 <= hi + EPS:
+            return True
+    return False
+
+
 def _graph(layout: Layout) -> dict[str, set[str]]:
     g: dict[str, set[str]] = {r.id: set() for r in layout.rooms}
     g[EXTERIOR] = set()
     for d in layout.doors:
-        if len(d.between) == 2:
+        if _door_valid(d, layout):
             a, b = d.between
+            if EXTERIOR in d.between and (abs(d.x - layout.entrance.x) >= EPS or abs(d.y - layout.entrance.y) >= EPS):
+                continue
             g.setdefault(a, set()).add(b)
             g.setdefault(b, set()).add(a)
     return g
@@ -70,24 +107,57 @@ def _reachable(layout: Layout, blocked: set[str] = frozenset()) -> set[str]:
 def no_overlap(layout: Layout) -> list[str]:
     errs, rs, fp = [], layout.rooms, layout.footprint
     for i, a in enumerate(rs):
+        if a.w <= 0 or a.h <= 0:
+            errs.append(f"{a.name} must have positive width and depth")
         for b in rs[i + 1 :]:
             if (ov := _overlap_area(a, b)) > EPS:
                 errs.append(f"{a.name} and {b.name} overlap by {ov:.0f} sq ft")
         if a.x < -EPS or a.y < -EPS or a.x + a.w > fp.width_ft + EPS or a.y + a.h > fp.depth_ft + EPS:
             errs.append(f"{a.name} extends outside the {fp.width_ft:g}x{fp.depth_ft:g} ft footprint")
+    if all(r.w > 0 and r.h > 0 for r in rs):
+        covered = sum(r.area for r in rs)
+        missing = fp.width_ft * fp.depth_ft - covered
+        if missing > EPS:
+            errs.append(f"Rooms leave {missing:.1f} sq ft of the footprint uncovered")
+    return errs
+
+
+def contract_integrity(layout: Layout) -> list[str]:
+    errs = []
+    ids = [r.id for r in layout.rooms]
+    if len(ids) != len(set(ids)):
+        errs.append("Room IDs must be unique")
+    vals = [("footprint width", layout.footprint.width_ft), ("footprint depth", layout.footprint.depth_ft)]
+    for r in layout.rooms:
+        vals.extend((f"{r.name} {field}", getattr(r, field)) for field in ("x", "y", "w", "h"))
+    for name, value in vals:
+        if not math.isfinite(value) or abs(value / GRID - round(value / GRID)) > EPS:
+            errs.append(f"{name} must be finite and on the 0.5 ft grid")
+    return errs
+
+
+def door_geometry(layout: Layout) -> list[str]:
+    errs = []
+    for d in layout.doors:
+        if not _door_valid(d, layout):
+            errs.append(f"Door between {' and '.join(d.between)} at ({d.x:g}, {d.y:g}) does not fit on a shared or exterior wall")
+    front = [d for d in layout.doors if EXTERIOR in d.between and _door_valid(d, layout)
+             and abs(d.x - layout.entrance.x) < EPS and abs(d.y - layout.entrance.y) < EPS]
+    if not front:
+        errs.append(f"Front door must sit at entrance ({layout.entrance.x:g}, {layout.entrance.y:g})")
     return errs
 
 
 def all_reachable(layout: Layout) -> list[str]:
     seen = _reachable(layout)
-    if not any(EXTERIOR in d.between for d in layout.doors):
+    if EXTERIOR not in seen or not _graph(layout)[EXTERIOR]:
         return ["The house has no front door"]
     return [f"{r.name} can't be reached from the front door" for r in layout.rooms if r.id not in seen]
 
 
 def bedroom_exterior_wall(layout: Layout) -> list[str]:
     errs = []
-    door_rooms = {rid for d in layout.doors for rid in d.between}
+    door_rooms = {rid for d in layout.doors if _door_valid(d, layout) for rid in d.between}
     for r in layout.rooms:
         if r.type in BEDROOMS:
             if not touches_exterior(r, layout):
@@ -142,7 +212,9 @@ def sizes_match(layout: Layout) -> list[str]:
 
 
 RULES: dict[str, Callable[[Layout], list[str]]] = {
+    "contract_integrity": contract_integrity,
     "no_overlap_in_footprint": no_overlap,
+    "door_geometry": door_geometry,
     "all_rooms_reachable": all_reachable,
     "bedroom_exterior_wall": bedroom_exterior_wall,
     "public_bathroom": public_bathroom,
@@ -165,3 +237,17 @@ def check(layout: Layout) -> list[Check]:
 
 def failures(checks: list[Check]) -> list[Check]:
     return [c for c in checks if not c.pass_]
+
+
+def check_prompt(prompt: str, layout: Layout) -> Check:
+    """Judge explicit requests using role 1's shared requirements parser."""
+    from . import requirements  # role 1's module, shared with the planner
+
+    program = RoomProgram(
+        requested_sqft=layout.requested_sqft or layout.footprint.width_ft * layout.footprint.depth_ft,
+        rooms=[RoomSpec.model_validate(r.model_dump()) for r in layout.rooms if r.type != "hall"],
+    )
+    errs = requirements.mismatches(requirements.parse(prompt), program)
+    return Check(rule="prompt_fidelity", pass_=not errs, message="; ".join(errs))
+
+
