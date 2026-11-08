@@ -27,3 +27,7 @@ design-mockups/renders/
 render/out/
 # agent board state (per clone)
 .board/
+
+# Blender scene dump written by walkthrough/render_modal.py (hundreds of MB)
+walkthrough/house.blend
+walkthrough/__pycache__/
