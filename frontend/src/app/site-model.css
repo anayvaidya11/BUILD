@@ -195,6 +195,30 @@ form.chatbox .send { flex: none; width: 34px; height: 34px; border-radius: 10px;
 form.chatbox .send:disabled { background: var(--line); cursor: default; }
 .infopane .scroll { padding-top: 18px; }
 
+/* ---------- result panel: always fit the viewport ----------
+   The chat pane's fixed parts (header, suggestion chips, composer, foot) could exceed a short
+   window (browser zoom, small laptop, fullscreen banner), pushing "Walk through" out of view.
+   Let the message list and the chips give way first, and tighten spacing on short screens. */
+.panel .pane.chatpane { min-height: 0; }
+.msgs { min-height: 56px; }
+.opts { flex: 0 1 auto; min-height: 0; max-height: 112px; overflow-y: auto; }
+.panel .foot { flex: none; }
+.chathead { flex: none; }
+form.chatbox { flex: none; }
+@media (max-height: 700px) {
+  .panel { top: 64px; bottom: 12px; }
+  .ptabs button { padding: 8px 10px; }
+  .chathead { padding: 12px 16px 2px; }
+  .chathead h2 { font-size: 16px; }
+  .chathead .lede { -webkit-line-clamp: 1; margin-bottom: 2px; }
+  .opts { max-height: 76px; padding-bottom: 4px; }
+  .opts button { padding: 4px 10px; font-size: 12.5px; }
+  form.chatbox { margin: 0 12px 8px; padding: 4px 4px 4px 10px; }
+  .panel .foot { padding: 8px 12px 10px; gap: 6px; }
+  .panel .foot #walkBtn { padding: 10px; font-size: 15px; }
+  .editmsg { font-size: 12px; }
+}
+
 /* ---------- clarifying question on the landing ---------- */
 .clarify { margin-top: 12px; background: var(--card); backdrop-filter: blur(10px); border: 1px solid var(--blue); border-radius: 16px; padding: 12px 14px; text-align: left; box-shadow: var(--shadow); animation: msgin .3s ease-out; }
 .clarify[hidden] { display: none; }
