@@ -32,8 +32,9 @@ PUBLIC = os.environ.get("BRIDGE_PUBLIC", f"http://127.0.0.1:{PORT}") + "/renders
 # (width, samples, adaptive threshold). "auto" = fast preview, then an automatic 4K high-quality pass per room
 # v2: preview trades samples for speed (the denoiser covers it); the 4K pass runs 192 spp instead of
 # 512, about 3x faster per room with no visible noise indoors. QUALITY_VERSION busts cached jobs.
-QUALITY = {"test": (1024, 32, 0.02), "preview": (2048, 64, 0.02), "final": (4096, 192, 0.008)}
-QUALITY_VERSION = 2
+QUALITY = {"test": (1024, 32, 0.02), "preview": (2048, 64, 0.02), "final": (4096, 128, 0.01)}
+QUALITY_VERSION = 3
+PARALLEL_HQ_MAX = 6  # with this many rooms or fewer to render, start the 4K pass alongside the preview
 JOBS = {}
 LOCK = threading.Lock()
 POOL = ThreadPoolExecutor(max_workers=24)
@@ -184,8 +185,13 @@ def start_job(payload):
             job["status"] = "done"
             save(job)
         return job
+    parallel_hq = quality == "auto" and len(order) <= PARALLEL_HQ_MAX
     for nid in order:
-        if quality == "auto":
+        if quality == "auto" and parallel_hq:
+            # few rooms (an edit): preview and 4K at once, so the sharp image lands in ~45 s not ~70 s
+            POOL.submit(run_node, job, nid, scene, "preview", False)
+            POOL.submit(run_node, job, nid, scene, "final", None)
+        elif quality == "auto":
             POOL.submit(run_node, job, nid, scene, "preview", True)
         else:
             POOL.submit(run_node, job, nid, scene, quality, False)

@@ -15,6 +15,7 @@ import math
 import pathlib
 
 import modal
+import os
 
 image = (
     modal.Image.debian_slim(python_version="3.11")
@@ -1504,9 +1505,16 @@ def fetch_extra_models():
     return {"files": len(jobs), "mb": round(total / 1e6, 1)}
 
 
+# Before a demo: BUILD_RENDER_WARM=4 modal deploy render/blender_render.py keeps 4 GPUs resident
+# (about $2/h each on L40S) so the first house of the session skips the 20-30 s cold start.
+# Redeploy without the variable afterwards to stop paying for idle GPUs.
+WARM = int(os.environ.get("BUILD_RENDER_WARM", "0"))
+
+
 @app.function(gpu="L40S", timeout=1800, cpu=8, memory=32768, volumes={ASSETS: assets_vol},
               scaledown_window=600,   # stay warm 10 min after a render: an edit's re-render skips the cold start
-              buffer_containers=4)    # keep spare containers warming while a burst is in flight
+              buffer_containers=4,    # keep spare containers warming while a burst is in flight
+              min_containers=WARM)
 def render_layout_node(payload: dict, node: dict, width: int = 2048, samples: int = 128, threshold: float = 0.008) -> dict:
     """Render one 360° panorama. node = {id, x, y} in Blender metres (x east, y north)."""
     import time
