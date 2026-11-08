@@ -10,14 +10,19 @@ import { CheckerPanel } from "@/components/CheckerPanel";
 import { PlanView } from "@/components/PlanView";
 import { Minimap } from "@/components/Minimap";
 import type { PlayerPos } from "@/components/Walkthrough";
+import { SiteControls, type SiteSettings } from "@/components/SiteControls";
 
 const Walkthrough = dynamic(() => import("@/components/Walkthrough"), { ssr: false });
+const SiteView = dynamic(() => import("@/components/SiteView"), { ssr: false });
+
+type View = "plan" | "walk" | "site";
 
 export default function Home() {
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [walking, setWalking] = useState(false);
+  const [view, setView] = useState<View>("plan");
+  const [site, setSite] = useState<SiteSettings>({ location: null, rotationDeg: 0, roof: "gable", flatten: true });
   const [player, setPlayer] = useState<PlayerPos | null>(null);
   const [elapsed, setElapsed] = useState<number | null>(null);
 
@@ -51,7 +56,9 @@ export default function Home() {
 
       <div className="flex min-h-0 flex-1 gap-3">
         <section className="relative flex-1 overflow-hidden rounded border border-neutral-200 bg-white">
-          {walking ? (
+          {view === "site" ? (
+            <SiteView layout={layout} {...site} onLocationChange={(location) => setSite((s) => ({ ...s, location }))} />
+          ) : view === "walk" ? (
             <>
               <Walkthrough layout={layout} onMove={setPlayer} />
               <Minimap layout={layout} player={player} />
@@ -65,12 +72,18 @@ export default function Home() {
         </section>
 
         <aside className="flex w-80 flex-col gap-4">
-          <button
-            className="rounded bg-blue-600 px-4 py-2 text-white disabled:opacity-50"
-            onClick={() => setWalking((w) => !w)}
-          >
-            {walking ? "Back to plan" : "Walk through"}
-          </button>
+          <div className="flex gap-1 rounded bg-neutral-200 p-1 text-sm">
+            {([["plan", "Plan"], ["walk", "Walk through"], ["site", "Outside"]] as const).map(([v, label]) => (
+              <button
+                key={v}
+                className={`flex-1 rounded px-3 py-1.5 ${view === v ? "bg-blue-600 text-white" : "text-neutral-700 hover:bg-white"}`}
+                onClick={() => setView(v)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          {view === "site" && <SiteControls value={site} onChange={setSite} />}
           <CheckerPanel result={result} />
           {elapsed !== null && <div className="text-xs text-neutral-500">Round trip {elapsed.toFixed(1)} s</div>}
           <div className="mt-auto">
