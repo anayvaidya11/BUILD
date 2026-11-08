@@ -20,7 +20,7 @@ import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js";
 import { BRAND } from "./core.js";
 import { STYLES, defaultExterior, buildExteriorHouse, parseExteriorPrompt } from "./exterior.js";
 import { ProjectionSkin } from "./projskin.js";
-import { openPhotoViewer } from "./photoviewer.js";
+import { neighborhoodOrientation, houseRotation } from "./orient.js";
 
 const TILES_VERSION = "0.5.4";
 const TILES_CDN = `https://cdn.jsdelivr.net/npm/3d-tiles-renderer@${TILES_VERSION}/build`;
@@ -78,21 +78,39 @@ const CSS = `
 .site-ov input[type=color]{width:100%;height:28px;border:1px solid #d9d6cf;border-radius:6px;padding:1px;background:#fff;cursor:pointer}
 .site-ov .ok{font-size:12px;color:#1f7a4d}
 .site-ov .shots{position:absolute;left:50%;bottom:44px;transform:translateX(-50%);display:flex;gap:10px;align-items:flex-end;background:rgba(20,20,22,.55);backdrop-filter:blur(8px);padding:8px;border-radius:14px}
-.site-ov .shot{width:118px;height:74px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
+.site-ov .thumbs{display:grid;grid-template-columns:repeat(6,72px);gap:6px}
+.site-ov .shot{width:72px;height:45px;border-radius:9px;overflow:hidden;background:#2a2b2e;position:relative;cursor:pointer;border:0;padding:0}
 .site-ov .shot img{width:100%;height:100%;object-fit:cover;display:block}
-.site-ov .shot span{position:absolute;inset:0;display:grid;place-items:center;color:#ddd;font-size:11px;text-align:center;padding:6px}
+.site-ov .shot span{position:absolute;inset:0;display:grid;place-items:center;color:#ddd;font-size:9px;text-align:center;padding:3px;overflow:hidden}
 .site-ov .shot.busy span::after{content:"";width:16px;height:16px;margin-top:22px;border:2px solid #fff6;border-top-color:#fff;border-radius:50%;animation:sitespin 0.8s linear infinite;position:absolute}
 @keyframes sitespin{to{transform:rotate(360deg)}}
 .site-ov .shots .side{display:flex;flex-direction:column;gap:6px;color:#fff;font-size:11px;max-width:150px}
 .site-ov .shots .side button{font-size:12px;padding:5px 8px}
 .site-ov button:disabled{opacity:.45;cursor:default}
+.site-ov .ostat{font-size:11px;color:#6e6b65}
+.site-ov .gen{position:absolute;inset:0;z-index:8;display:grid;place-items:center;backdrop-filter:blur(18px) saturate(1.1);-webkit-backdrop-filter:blur(18px);background:rgba(12,14,20,.28);opacity:0;pointer-events:none;transition:opacity .7s}
+.site-ov .gen.on{opacity:1;pointer-events:auto}
+.site-ov .gen .gcard{color:#fff;text-align:center;display:flex;flex-direction:column;align-items:center;gap:12px;text-shadow:0 1px 8px #0008}
+.site-ov .gen .gcard b{font-size:22px;font-weight:600;letter-spacing:-.01em}
+.site-ov .gen .gcard span{font-size:13px;opacity:.85}
+.site-ov .gen .ring{width:42px;height:42px;border:3px solid #fff5;border-top-color:#fff;border-radius:50%;animation:sitespin 0.9s linear infinite}
+.site-ov .gen .bar{width:220px;height:4px;border-radius:2px;background:#fff3;overflow:hidden}.site-ov .gen .bar i{display:block;height:100%;width:0;background:#fff;transition:width .4s}
+.site-ov .spinbg{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;z-index:2;opacity:0;pointer-events:none;background:#0b0b0c}
+.site-ov.spinning canvas{visibility:hidden}
+.site-ov.spinning{background:#0b0b0c}
+.site-ov .attr{z-index:3}
+.site-ov .spinhud{position:absolute;left:50%;bottom:22px;transform:translateX(-50%);z-index:4;display:none;align-items:center;gap:10px;background:rgba(0,0,0,.55);color:#fff;padding:8px 10px 8px 16px;border-radius:999px;font-size:13px;backdrop-filter:blur(8px)}
+.site-ov .spinhud button{background:#fff;color:#151515;border:0;border-radius:999px;padding:6px 12px}
+.site-ov.spinning .spinhud{display:flex}
+.site-ov.spinning .sp,.site-ov.spinning .shots,.site-ov.spinning .hint,.site-ov.flying .sp,.site-ov.flying .shots,.site-ov.flying .hint{display:none}
+.site-ov.spinning{cursor:ew-resize}
 .site-ov .skinrow{display:flex;gap:5px;align-items:center;font-size:11px}
 .site-ov .lb{position:absolute;inset:0;background:rgba(0,0,0,.82);display:grid;place-items:center;z-index:5}
 .site-ov .lb img{max-width:92%;max-height:82%;border-radius:10px;box-shadow:0 20px 60px #000}
 .site-ov .lb .bar{position:absolute;top:16px;right:16px;display:flex;gap:8px}
 `;
 
-let state = { label: "", lat: null, lon: null, rotationDeg: 0, flatten: true, ext: defaultExterior() };
+let state = { label: "", lat: null, lon: null, rotationDeg: 0, orient: "street", flatten: true, ext: defaultExterior() };
 
 async function geocode(q) {
   const r = await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=1&q=${encodeURIComponent(q)}`);
@@ -110,12 +128,16 @@ export async function openSiteView(layout) {
   ov.className = "site-ov";
   ov.innerHTML = `
     <canvas tabindex="0" aria-label="3D site view"></canvas>
+    <img class="spinbg" alt="" /><img class="spinbg" alt="" />
     <div class="sp">
       <h3>Put it on a lot</h3>
       <form><input type="text" placeholder="Street address" aria-label="Address" /><button class="pri">Place</button></form>
       <div class="err" hidden></div>
       <div class="muted where"></div>
-      <label class="muted">Rotate house: <span class="deg">0°</span><input type="range" min="-180" max="180" step="5" /></label>
+      <div class="muted">Orientation</div>
+      <div class="seg orients"><button type="button" data-orient="street">Face street</button><button type="button" data-orient="match">Match neighbors</button><button type="button" data-orient="manual">Manual</button></div>
+      <div class="ostat"></div>
+      <label class="muted">Rotate house: <span class="deg">0°</span><input type="range" class="rot" min="-180" max="180" step="1" /></label>
       <label class="row muted"><input type="checkbox" class="flat" /> Clear the lot (existing house &amp; trees)</label>
       <div class="sec">
         <h3>Exterior</h3>
@@ -139,23 +161,25 @@ export async function openSiteView(layout) {
     <div class="load" hidden>Loading terrain…</div>
     <div class="hint" hidden>Drag to orbit · scroll to zoom · double-click the map to move the house</div>
     <div class="attr"></div>
+    <div class="spinhud">Move your mouse left and right to walk around the house · 360° photoreal <button type="button" class="explore">Explore map</button></div>
+    <div class="gen"><div class="gcard"><div class="ring"></div><b>Building your house on the lot</b><span class="gstat">Generating photoreal views…</span><div class="bar"><i></i></div></div></div>
     <div class="shots" hidden>
-      ${[0, 1, 2, 3, 4, 5].map((i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}
-      <div class="side"><b>Photoreal shots</b><span class="sstat"></span><label class="skinrow"><input type="checkbox" class="skin" checked disabled /> Photo skin on 3D house</label><button type="button" class="fullview pri" disabled>Full screen</button><button type="button" class="rerender">Re-render</button></div>
+      <div class="thumbs">${Array.from({ length: 12 }, (_, i) => `<button type="button" class="shot" data-i="${i}"><span></span></button>`).join("")}</div>
+      <div class="side"><b>Photoreal shots</b><span class="sstat"></span><label class="skinrow"><input type="checkbox" class="skin" checked disabled /> Photo skin on 3D house</label><button type="button" class="fullview pri" disabled>360° view</button><button type="button" class="rerender">Re-render</button></div>
     </div>`;
   document.body.appendChild(ov);
   const $ = (s) => ov.querySelector(s);
 
   // --- three setup ---
   const canvas = $("canvas");
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, logarithmicDepthBuffer: true });
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, logarithmicDepthBuffer: true });
   renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   const scene = new THREE.Scene();
   scene.background = new THREE.Color(0xcfdcec);
   scene.fog = new THREE.Fog(0xcfdcec, 1500, 9000);
-  const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 40000);
+  const camera = new THREE.PerspectiveCamera(50, 1, 0.5, 1e8); // far enough to start the fly-in from space (log depth keeps precision)
   camera.position.set(-22, 18, -24);
   const controls = new OrbitControls(camera, canvas);
   controls.enableDamping = true; controls.maxPolarAngle = Math.PI / 2 - 0.08; controls.minDistance = 8; controls.maxDistance = 900;
@@ -175,6 +199,7 @@ export async function openSiteView(layout) {
 
   const rebuildHouse = () => {
     skin.invalidate(); // new geometry: old projections no longer line up until Re-render
+    if (spin) exitSpin();
     const box = ov.querySelector(".skin"); if (box) box.disabled = true;
     houseRoot.clear(); houseRoot.add(buildExteriorHouse(layout, state.ext));
     houseRoot.rotation.y = Math.PI + state.rotationDeg * DEG;
@@ -208,7 +233,16 @@ export async function openSiteView(layout) {
     if (!flattener || !tiles) return;
     if (shape) { flattener.deleteShape(shape); shape = null; }
     if (!state.flatten || groundY === null) return;
-    const w = (layout.footprint.width_ft + 2 * LOT_MARGIN_FT) * FT, d = (layout.footprint.depth_ft + 2 * LOT_MARGIN_FT + 10) * FT;
+    let w = (layout.footprint.width_ft + 2 * LOT_MARGIN_FT) * FT, d = (layout.footprint.depth_ft + 2 * LOT_MARGIN_FT + 10) * FT;
+    // Grow the pad to cover the existing house's whole OSM outline (in the new house's axes), so no
+    // part of the old house survives next to the new one.
+    if (orientInfo?.lotBuilding) {
+      const Y = new THREE.Vector3(0, 1, 0), v = new THREE.Vector3();
+      for (const q of orientInfo.lotBuilding) {
+        v.set(q.x, 0, q.z).applyAxisAngle(Y, -houseRoot.rotation.y);
+        w = Math.max(w, 2 * (Math.abs(v.x) + 3)); d = Math.max(d, 2 * (Math.abs(v.z) + 3));
+      }
+    }
     const mesh = new THREE.Mesh(lotBowl(w, d));
     tiles.group.updateMatrixWorld(true);
     const inv = tiles.group.matrixWorld.clone().invert();
@@ -223,7 +257,8 @@ export async function openSiteView(layout) {
   const setGround = (y) => {
     const dy = y - (groundY ?? y);
     groundY = y; houseRoot.position.y = y;
-    if (dy) { camera.position.y += dy; controls.target.y += dy; } else { resetCamera(); }
+    if (flight || spin) { /* the fly-in and 360 view place the camera themselves */ }
+    else if (dy) { camera.position.y += dy; controls.target.y += dy; } else { resetCamera(); }
     applyFlatten();
     $(".load").hidden = true; $(".hint").hidden = false;
   };
@@ -254,19 +289,24 @@ export async function openSiteView(layout) {
   // Google tiles are hidden during capture: the model only ever sees OUR house on a neutral
   // backdrop, and gets the neighborhood as words. Restyling Google map imagery itself would be a
   // derivative of Maps content, which the Maps Platform terms don't allow.
-  // off = degrees from the front-door direction; elev = camera pitch above horizontal;
-  // fill = fraction of the frame width the house should span.
-  // tier "main" = Nano Banana 2.1 for the hero views; "lite" = Nano Banana 2 Lite (cheapest) for the
-  // extra coverage views, which also get the front hero photo as a reference so materials match.
-  const SHOTS = [
-    { off: 35, elev: 4, fill: 0.72, tier: "main", desc: "Eye-level photo from the front yard, three-quarter view of the front" },
-    { off: -55, elev: 3, fill: 0.62, tier: "main", desc: "Eye-level photo from across the street, showing the front and side" },
-    { off: 150, elev: 32, fill: 0.62, tier: "main", desc: "Elevated drone photo from above the back corner of the lot" },
-    { off: 100, elev: 4, fill: 0.62, tier: "lite", desc: "Eye-level photo of the side of the house from the side yard" },
-    { off: -115, elev: 4, fill: 0.62, tier: "lite", desc: "Eye-level photo of the other side and back corner of the house" },
-    { off: 185, elev: 6, fill: 0.66, tier: "lite", desc: "Eye-level photo of the back of the house from the back yard" },
-  ];
-  let shotToken = 0, shotTimer = 0, renderReady = null;
+  // A 360 turntable: RING frames evenly spaced around the house, every camera at the same height
+  // and distance so the house stays put from frame to frame. All on the high-quality model; the
+  // first (front three-quarter) frame renders first and is passed to every other frame as a
+  // reference so materials, landscaping and light match all the way round.
+  // off = degrees from the front-door direction; elev = camera pitch; fill = share of frame width.
+  const RING = 12;
+  const sideName = (off) => {
+    const a = ((off % 360) + 360) % 360;
+    return a < 22.5 || a >= 337.5 ? "front" : a < 67.5 ? "front-right corner" : a < 112.5 ? "right side" : a < 157.5 ? "back-right corner"
+      : a < 202.5 ? "back" : a < 247.5 ? "back-left corner" : a < 292.5 ? "left side" : "front-left corner";
+  };
+  const SHOTS = Array.from({ length: RING }, (_, k) => {
+    const off = 30 + k * (360 / RING);
+    return { off, elev: 8, fill: 0.6, tier: "main", desc: `Photo from the ${sideName(off)} of the house, at the same distance and height as every other frame of a 360° turntable` };
+  });
+  // the photo skin (3D map view) has 6 projectors: use every other ring frame
+  const skinSlot = (i) => (i % 2 === 0 ? i / 2 : -1);
+  let shotToken = 0, shotTimer = 0, renderReady = null, shotsBusy = false;
   const shotEls = [...ov.querySelectorAll(".shot")];
   const shotUrls = [];
   const captureAngles = () => {
@@ -297,7 +337,7 @@ export async function openSiteView(layout) {
       cam.lookAt(center.x, center.y - (s.elev > 10 ? 1 : 0.5), center.z); cam.updateMatrixWorld();
       renderer.render(scene, cam);
       const url = renderer.domElement.toDataURL("image/jpeg", 0.9); // read back in the same task as the render
-      skin.captureProjector(i, cam); // remember this exact camera as projector i
+      if (skinSlot(i) >= 0) skin.captureProjector(skinSlot(i), cam); // this exact camera becomes a projector
       return url;
     });
     scene.remove(ground); ground.geometry.dispose(); ground.material.dispose();
@@ -316,10 +356,11 @@ export async function openSiteView(layout) {
   };
   const runShots = async () => {
     const token = ++shotToken;
-    shotUrls.length = 0; $(".fullview").disabled = true;
+    shotUrls.length = 0; $(".fullview").disabled = true; shotsBusy = true;
     $(".shots").hidden = false;
     if (renderReady === null) renderReady = await fetch("/api/render/status").then((r) => r.json()).catch(() => ({ ready: false, offline: true }));
     if (!renderReady.ready) {
+      shotsBusy = false; afterShots();
       $(".sstat").textContent = renderReady.offline ? "Run node design-mockups/serve.mjs to enable." : "Add GEMINI_API_KEY to design-mockups/.env.local and restart serve.mjs.";
       shotEls.forEach((_, i) => setShot(i, { text: "Not set up" }));
       return;
@@ -330,62 +371,191 @@ export async function openSiteView(layout) {
     const images = captureAngles();
     $(".sstat").textContent = "Rendering…";
     let done = 0;
-    let resolveHero; const hero = new Promise((r) => { resolveHero = r; });
-    images.forEach((_, i) => setShot(i, { busy: true, text: SHOTS[i].tier === "lite" ? "Queued" : "Rendering" }));
-    await Promise.all(images.map(async (image, i) => {
-      // Extra views wait for the front hero photo and copy its materials, so the views agree.
-      const reference = SHOTS[i].tier === "lite" ? await hero : null;
-      if (token !== shotToken) return;
+    images.forEach((_, i) => setShot(i, { busy: i === 0, text: i === 0 ? "Rendering" : "Queued" }));
+    const progress = () => {
+      $(".sstat").textContent = done === images.length ? "Done · click for 360°" : `Rendering… ${done}/${images.length}`;
+      $(".gstat").textContent = `Generating photoreal 360° views… ${done}/${images.length}`;
+      $(".gen .bar i").style.width = `${Math.round((done / images.length) * 100)}%`;
+    };
+    const renderOne = async (i, reference) => {
+      if (token !== shotToken) return null;
       setShot(i, { busy: true, text: "Rendering" });
       const prompt = `Turn this plain 3D model render into a photorealistic architectural exterior photograph. ` +
         `Keep the house EXACTLY as modeled: same single-story footprint, roof shape and pitch, wall, trim and roof colors, ` +
         `window and door positions, and porch. Do not add floors, wings, garages or chimneys. ` +
-        // These photos are also projected back onto the 3D model as its "skin", so anything in
-        // front of the house would get painted onto the walls or roof.
+        `Keep the camera framing exactly as given: the house must stay the same size and in the same place in the frame. ` +
         `Keep the whole house fully visible and unobstructed: no trees, branches, shrubs, cars or objects in front of or overhanging any part of it; keep landscaping beside and behind it, and low plantings below the windows only. ` +
         `Replace the plain gray backdrop and ground with a realistic setting: a ${style} home on a residential lot${where ? ` in ${where}` : ""}, ` +
         `with mature trees and shrubs typical of the area, a green lawn, a front walkway, and neighboring houses softly out of focus. ` +
         `${SHOTS[i].desc}. Soft late-afternoon sunlight, natural shadows, 35mm lens, high-end real estate photography. No text, watermarks or people.` +
-        (reference ? ` The second image is a photo of this same house from the front: match its siding, trim, roof material and color, windows, landscaping, lighting and season exactly, as if taken on the same afternoon.` : "");
+        (reference ? ` The second image is a photo of this same house and yard from the front-right: match its siding, trim, roof material and color, windows, trees, landscaping, lighting and season exactly, as if taken on the same afternoon a few steps further around the house.` : "");
       try {
         const r = await fetch("/api/render", { method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ image, prompt, tier: SHOTS[i].tier, ...(reference ? { reference } : {}) }) });
+          body: JSON.stringify({ image: images[i], prompt, tier: SHOTS[i].tier, ...(reference ? { reference } : {}) }) });
         const data = await r.json();
-        if (token !== shotToken) return;
+        if (token !== shotToken) return null;
         if (!r.ok) throw new Error(data.error || r.statusText);
-        if (i === 0) resolveHero(data.image);
         setShot(i, { url: data.image });
-        await skin.setImage(i, data.image);
-        if (token === shotToken) { $(".skin").disabled = false; if ($(".skin").checked) skin.enable(true); }
+        if (skinSlot(i) >= 0) {
+          await skin.setImage(skinSlot(i), data.image);
+          if (token === shotToken) { $(".skin").disabled = false; if ($(".skin").checked && !spin) skin.enable(true); }
+        }
+        return data.image;
       } catch (err) {
-        if (i === 0) resolveHero(null); // extra views still render, just without the reference
-        if (token === shotToken) setShot(i, { text: String(err.message || err).slice(0, 90) });
+        if (token === shotToken) setShot(i, { text: String(err.message || err).slice(0, 60) });
+        return null;
       } finally {
-        if (token === shotToken) $(".sstat").textContent = ++done === images.length ? "Done · click to enlarge" : `Rendering… ${done}/${images.length}`;
+        if (token === shotToken) { done++; progress(); }
       }
+    };
+    // hero first (it is the reference for everything else), then the rest, 4 at a time
+    const hero = await renderOne(0, null);
+    const queue = images.map((_, i) => i).slice(1);
+    await Promise.all(Array.from({ length: 4 }, async () => {
+      while (queue.length && token === shotToken) await renderOne(queue.shift(), hero);
     }));
     if (token !== shotToken) return;
-    const got = shotUrls.filter(Boolean).length;
-    $(".fullview").disabled = !got;
-    if (got) openViewer(0); // show the joined photo view as soon as the renders are in
+    shotsBusy = false;
+    $(".fullview").disabled = !shotUrls.some(Boolean);
+    afterShots();
   };
   $(".skin").addEventListener("change", (e) => skin.enable(e.target.checked));
-  const scheduleShots = () => { clearTimeout(shotTimer); shotTimer = setTimeout(runShots, 400); };
+  const scheduleShots = () => { if (disposed) return; clearTimeout(shotTimer); shotTimer = setTimeout(() => { if (!disposed) runShots(); }, 400); };
   $(".rerender").addEventListener("click", runShots);
-  // Full-screen viewer: the shots joined into one walk-around view (see photoviewer.js).
-  let viewer = null;
-  const openViewer = (start = 0) => {
-    viewer?.close();
-    const shots = SHOTS.map((s, i) => ({ url: shotUrls[i], title: s.desc, azimuth: s.off }));
-    viewer = openPhotoViewer(ov, shots, start);
+  // --- 360 view: photos only. The ring frames are shown full screen; moving the mouse left/right
+  // scrubs around the house, cross-fading neighboring frames (all taken from the same distance and
+  // height, so the house stays in place while the view turns). No Google mesh, no 3D model. ---
+  const frameEls = [...ov.querySelectorAll(".spinbg")];
+  let spin = null;
+  const ringPos = (i) => i; // frame i sits at ring position i (30 deg steps)
+  const nearestWithPhoto = (k) => {
+    for (let d = 0; d < RING; d++) for (const j of [k + d, k - d]) { const i = ((j % RING) + RING) % RING; if (shotUrls[i]) return i; }
+    return -1;
   };
-  shotEls.forEach((el, i) => el.addEventListener("click", () => { if (shotUrls[i]) openViewer(i); }));
-  $(".fullview").addEventListener("click", () => openViewer(0));
+  const enterSpin = (startShot = 0) => {
+    if (!shotUrls.some(Boolean)) return false;
+    spin = { pos: ringPos(startShot), target: ringPos(startShot), origin: ringPos(startShot) };
+    controls.enabled = false;
+    ov.classList.add("spinning");
+    return true;
+  };
+  const exitSpin = () => {
+    if (!spin) return;
+    spin = null; ov.classList.remove("spinning");
+    frameEls.forEach((el) => { el.style.opacity = 0; });
+    controls.enabled = true; resetCamera(); // back to the close orbit view of the lot
+    skin.enable($(".skin").checked);
+  };
+  const updateSpin = (dt) => {
+    // shortest way round the ring toward the mouse target
+    let d = spin.target - spin.pos; d -= Math.round(d / RING) * RING;
+    spin.pos += d * Math.min(1, dt * 7);
+    const p = ((spin.pos % RING) + RING) % RING, k = Math.floor(p), f = p - k;
+    const a = nearestWithPhoto(k), b = nearestWithPhoto(k + 1);
+    const t = f * f * (3 - 2 * f);
+    [[a, 1], [b, t]].forEach(([i, o], n) => {
+      const el = frameEls[n];
+      if (i < 0) { el.style.opacity = 0; return; }
+      if (el.dataset.i !== String(i)) { el.src = shotUrls[i]; el.dataset.i = String(i); }
+      el.style.opacity = (n === 1 && a === b ? 0 : o).toFixed(3);
+    });
+  };
+  ov.addEventListener("pointermove", (e) => {
+    if (!spin || e.target.closest(".spinhud")) return;
+    const r = ov.getBoundingClientRect();
+    // one sweep across the screen = one full lap, centered on where we came in
+    spin.target = spin.origin + ((e.clientX - r.left) / r.width - 0.5) * RING;
+  });
+  $(".explore").addEventListener("click", exitSpin);
+  shotEls.forEach((el, i) => el.addEventListener("click", () => { if (shotUrls[i]) enterSpin(i); }));
+  $(".fullview").addEventListener("click", () => enterSpin(0));
 
-  const place = (loc) => {
+  // --- fly-in from space, then a blurred "generating" screen until the photos are ready ---
+  let flight = null;
+  const SKY = new THREE.Color(0xcfdcec), SPACE = new THREE.Color(0x04060c);
+  const startFlight = () => {
+    if (!tiles) return;
+    exitSpin();
+    flight = { t: 0, dur: 9 };
+    controls.enabled = false;
+    scene.fog = null;
+    ov.classList.add("flying");
+  };
+  const updateFlight = (dt) => {
+    flight.t += dt;
+    const u = Math.min(1, flight.t / flight.dur);
+    const e = u < 0.5 ? 4 * u * u * u : 1 - Math.pow(-2 * u + 2, 3) / 2;
+    const gy = groundY ?? 0, hTop = 1.8e7, hEnd = 140;
+    // exponential descent: equal time per order of magnitude, like a real zoom from orbit
+    const h = Math.exp(Math.log(hTop) + (Math.log(hEnd) - Math.log(hTop)) * e);
+    const tiltIn = u < 0.6 ? 0 : ((u - 0.6) / 0.4) ** 2; // straight down from space, tilting to oblique at the end
+    const horiz = h * (0.02 + 0.9 * tiltIn);
+    camera.position.set(-0.68 * horiz, gy + h, -0.74 * horiz);
+    camera.lookAt(0, gy, 0);
+    const k = Math.max(0, Math.min(1, (Math.log(h) - Math.log(3e5)) / (Math.log(hTop) - Math.log(3e5))));
+    scene.background = SKY.clone().lerp(SPACE, k);
+    if (u >= 1) finishFlight();
+  };
+  const finishFlight = () => {
+    flight = null;
+    ov.classList.remove("flying");
+    scene.background = SKY; scene.fog = new THREE.Fog(0xcfdcec, 1500, 9000);
+    controls.target.set(0, (groundY ?? 0) + 3, 0);
+    // at ~100 m the photo mesh turns soft: blur the screen while the photoreal views finish
+    if (shotsBusy) $(".gen").classList.add("on");
+    else afterShots();
+  };
+  const afterShots = () => {
+    if (flight) return; // flight end will pick this up
+    $(".gen").classList.remove("on");
+    if (shotUrls.some(Boolean)) enterSpin(0);
+    else if (!spin) { controls.enabled = true; resetCamera(); }
+  };
+
+  // --- auto-orientation from OpenStreetMap neighbors + street ---
+  const setRotation = (theta) => {
+    let deg = Math.round(((theta - Math.PI) / DEG) % 360);
+    if (deg > 180) deg -= 360; if (deg < -180) deg += 360;
+    state.rotationDeg = deg;
+    range.value = deg; $(".deg").textContent = `${deg}°`;
+    houseRoot.rotation.y = Math.PI + deg * DEG; applyFlatten();
+  };
+  let orientInfo = null;
+  const houseVectors = () => {
+    const { width_ft: W, depth_ft: D } = layout.footprint, e = layout.entrance, eps = 0.01;
+    const [fx, fz] = Math.abs(e.y - D) < eps ? [0, 1] : Math.abs(e.y) < eps ? [0, -1] : Math.abs(e.x - W) < eps ? [1, 0] : [-1, 0];
+    return { front: { x: fx, z: fz }, long: W >= D ? { x: 1, z: 0 } : { x: 0, z: 1 } };
+  };
+  const applyOrientation = () => {
+    const syncBtns = () => ov.querySelectorAll("[data-orient]").forEach((b) => b.classList.toggle("on", b.dataset.orient === state.orient));
+    syncBtns();
+    if (state.orient === "manual" || !orientInfo) return;
+    const { front, long } = houseVectors();
+    const th = houseRotation(orientInfo, front, long, state.orient);
+    if (th !== null) setRotation(th);
+  };
+  const autoOrient = async (loc) => {
+    $(".ostat").textContent = "Checking how neighboring houses sit…";
+    try {
+      orientInfo = await neighborhoodOrientation(loc.lat, loc.lon);
+      const o = orientInfo;
+      $(".ostat").textContent = o.longAxis || o.toStreet
+        ? `Lined up with ${o.nBuildings} nearby buildings${o.street ? `, facing ${o.street}` : ""}.`
+        : "No nearby buildings or streets found; set it by hand.";
+      applyOrientation();
+      applyFlatten();
+    } catch (err) {
+      orientInfo = null;
+      $(".ostat").textContent = `Couldn't read neighbors (${err.message}); set it by hand.`;
+    }
+  };
+
+  const place = (loc, { fly = true } = {}) => {
     Object.assign(state, loc);
     $(".where").textContent = `${loc.label}\n${loc.lat.toFixed(5)}, ${loc.lon.toFixed(5)}`;
-    scheduleShots(); // photoreal shots start as soon as an address is looked up
+    exitSpin();
+    // orient first (renders depend on it for lighting), but never wait more than ~7 s for OSM
+    Promise.race([autoOrient(loc), new Promise((r) => setTimeout(r, 7000))]).then(scheduleShots);
     if (!tiles) return;
     reorient.lat = loc.lat * DEG; reorient.lon = loc.lon * DEG; // re-applied if the root tileset loads later
     reorient.transformLatLonHeightToOrigin(loc.lat * DEG, loc.lon * DEG, 0);
@@ -394,6 +564,7 @@ export async function openSiteView(layout) {
     if (shape) { flattener.deleteShape(shape); shape = null; }
     houseRoot.position.y = 0; resetCamera();
     $(".load").hidden = false; $(".hint").hidden = true;
+    if (fly) startFlight();
   };
 
   // --- controls wiring ---
@@ -404,10 +575,11 @@ export async function openSiteView(layout) {
     const err = $(".err"); err.hidden = true;
     try { place(await geocode(input.value)); } catch (x) { err.textContent = x.message; err.hidden = false; }
   });
-  const range = $("input[type=range]");
+  const range = $("input.rot");
   range.value = state.rotationDeg; $(".deg").textContent = `${state.rotationDeg}°`;
   range.addEventListener("input", () => {
     state.rotationDeg = Number(range.value); $(".deg").textContent = `${state.rotationDeg}°`;
+    state.orient = "manual"; ov.querySelectorAll("[data-orient]").forEach((b) => b.classList.toggle("on", b.dataset.orient === "manual"));
     houseRoot.rotation.y = Math.PI + state.rotationDeg * DEG; applyFlatten();
   });
   // --- exterior editing: presets, roof, pitch, colors, porch, and a plain-English box ---
@@ -436,6 +608,7 @@ export async function openSiteView(layout) {
     msg.style.color = ""; msg.textContent = `Applied: ${changes.join(", ")}`;
     state.ext = spec; syncExt(); rebuildHouse(); box.value = "";
   });
+  ov.querySelectorAll("[data-orient]").forEach((b) => b.addEventListener("click", () => { state.orient = b.dataset.orient; applyOrientation(); }));
   const flat = $("input.flat");
   flat.checked = state.flatten;
   flat.addEventListener("change", () => { state.flatten = flat.checked; applyFlatten(); });
@@ -446,12 +619,13 @@ export async function openSiteView(layout) {
     const hit = ray.intersectObject(tiles.group, true)[0];
     if (!hit) return;
     const c = tiles.ellipsoid.getPositionToCartographic(hit.point.clone().applyMatrix4(tiles.group.matrixWorld.clone().invert()), {});
-    place({ lat: c.lat / DEG, lon: c.lon / DEG, label: state.label.replace(/ \(moved\)$/, "") + " (moved)" });
+    place({ lat: c.lat / DEG, lon: c.lon / DEG, label: state.label.replace(/ \(moved\)$/, "") + " (moved)" }, { fly: false });
   });
 
   const resize = () => {
     const w = ov.clientWidth, h = ov.clientHeight;
-    renderer.setSize(w, h, false); camera.aspect = w / h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h, false); camera.aspect = w / h;
+    camera.updateProjectionMatrix();
     tiles?.setResolutionFromRenderer(camera, renderer);
   };
   addEventListener("resize", resize);
@@ -460,7 +634,9 @@ export async function openSiteView(layout) {
   const frame = (now) => {
     if (disposed) return;
     const dt = Math.min((now - last) / 1000, 0.1); last = now;
-    controls.update();
+    if (flight) updateFlight(dt);
+    else if (spin) updateSpin(dt);
+    else controls.update();
     camera.updateMatrixWorld();
     skin.update();
     if (tiles && tiles.group.visible) {
@@ -478,7 +654,7 @@ export async function openSiteView(layout) {
         }
       }
     }
-    renderer.render(scene, camera);
+    if (!spin) renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   };
 
@@ -487,10 +663,10 @@ export async function openSiteView(layout) {
     disposed = true; cancelAnimationFrame(raf); removeEventListener("resize", resize); removeEventListener("keydown", onKey);
     controls.dispose(); skin.dispose(); tiles?.dispose(); renderer.dispose(); ov.remove();
   };
-  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const onKey = (e) => { if (e.key === "Escape") (spin ? exitSpin() : close()); };
   addEventListener("keydown", onKey);
   // Keep keystrokes in the overlay away from the mockup underneath (WASD walkers, shortcuts).
-  for (const t of ["keydown", "keyup", "keypress"]) ov.addEventListener(t, (e) => { if (e.key === "Escape") close(); e.stopPropagation(); });
+  for (const t of ["keydown", "keyup", "keypress"]) ov.addEventListener(t, (e) => { if (t === "keydown" && e.key === "Escape") (spin ? exitSpin() : close()); e.stopPropagation(); });
   $(".close").addEventListener("click", close);
 
   syncExt(); rebuildHouse(); resize(); resetCamera();
