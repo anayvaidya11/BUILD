@@ -23,6 +23,8 @@ from .selfcheck import failures, selfcheck
 from .taxonomy import CONTRACT_TYPES, MIN_DIM, TO_CONTRACT, WEIGHT
 from .transform import Transform, choose_transform, entry_face_for
 from .walls import build_walls
+from .footprint import outline as room_outline
+from .shapes import stepped_wing
 
 VERSION = "0.1.0"
 HALL_WIDTH_FT = 4.0   # rule minimum is 3 ft; 4 ft feels right in first person
@@ -496,6 +498,44 @@ def solve(program: dict, previous: Optional[dict] = None, *,
                 break
 
     layout = best.layout
+    shape_request = str(program.get("shape") or program.get("notes") or "").lower()
+    shape = next((kind for kind in ("l", "t", "u") if
+                  shape_request in {kind, f"{kind}-shape", f"{kind}-shaped"} or
+                  f"{kind}-shaped" in shape_request), None)
+    if shape:
+        shaped = stepped_wing(best.rects, best.prog.hall_id, shape)
+        if shaped:
+            try:
+                boundary, holes = room_outline(shaped)
+                W2 = max(r.x2 for r in shaped.values())
+                D2 = max(r.y2 for r in shaped.values())
+                old_entry = layout["entrance"]
+                roles = Roles(
+                    types={rid: (best.prog.rooms[rid].type if rid in best.prog.rooms else "hallway") for rid in shaped},
+                    hall=best.prog.hall_id if best.prog.hall_id in shaped else None,
+                    entrance=old_entry["room"],
+                    host={rid: room.host for rid, room in best.prog.rooms.items() if room.host},
+                    garage=best.arr.garage,
+                    dual=frozenset(rid for rid, room in best.prog.rooms.items() if room.dual),
+                    closed=frozenset(rid for rid, room in best.prog.rooms.items() if room.type in best.prog.closed),
+                )
+                doors, entrance = plan_doors(shaped, roles, W2, D2, old_entry["side"], prog.entrance_pos)
+                trial = copy.deepcopy(layout)
+                trial["footprint"] = {"width_ft": r2(W2), "depth_ft": r2(D2),
+                                      "outline": boundary, "holes": holes}
+                trial["rooms"] = [{**r, "x": shaped[r["id"]].x, "y": shaped[r["id"]].y,
+                                    "w": shaped[r["id"]].w, "h": shaped[r["id"]].h}
+                                   for r in layout["rooms"]]
+                trial["doors"], trial["entrance"] = doors, entrance
+                trial["windows"] = plan_windows(shaped, roles.types, W2, D2, doors)
+                if not failures(selfcheck(trial)):
+                    best.rects, layout = shaped, trial
+                else:
+                    warnings.append("Requested irregular outline could not pass layout checks; used rectangle.")
+            except ValueError:
+                warnings.append("Requested irregular outline could not be formed; used rectangle.")
+        else:
+            warnings.append("Requested irregular outline could not be formed for these rooms; used rectangle.")
     W, D = layout["footprint"]["width_ft"], layout["footprint"]["depth_ft"]
     types = {rid: (best.prog.rooms[rid].type if rid in best.prog.rooms else "hallway") for rid in best.rects}
     windows = plan_windows(best.rects, types, W, D, layout["doors"])

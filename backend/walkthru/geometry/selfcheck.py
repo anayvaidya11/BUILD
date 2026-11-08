@@ -16,6 +16,7 @@ from collections import deque
 from typing import Dict, List
 
 from .geom import Rect, exterior_edges, intersection_area, shared_edge
+from .footprint import outline as room_outline
 
 EXTERIOR = "exterior"
 TOL = 0.01                 # same tolerance as checker.EPS
@@ -37,7 +38,7 @@ def _door_fits(d: dict, rects: Dict[str, Rect], W: float, D: float) -> str:
     half = d["width_ft"] / 2
     if EXTERIOR in (a, b):
         room = b if a == EXTERIOR else a
-        segs = [(o, c, s0, s1) for _, o, c, s0, s1 in exterior_edges(rects[room], W, D)]
+        segs = [(o, c, s0, s1) for _, o, c, s0, s1 in exterior_edges(rects[room], W, D, rects.values())]
     else:
         seg = shared_edge(rects[a], rects[b])
         if seg is None:
@@ -72,6 +73,14 @@ def selfcheck(layout: dict) -> List[dict]:
         vals += [(f"{names[r['id']]} {f}", float(r[f])) for f in ("x", "y", "w", "h")]
     errs += [f"{n} must be finite and on the 0.5 ft grid" for n, v in vals
              if not math.isfinite(v) or abs(v / 0.5 - round(v / 0.5)) > TOL]
+    for name, value in [("footprint width", W), ("footprint depth", D)] + [
+        (f"{names[r['id']]} target area", float(r.get("target_sqft", 0))) for r in rooms
+    ]:
+        if not math.isfinite(value) or value <= 0:
+            errs.append(f"{name} must be finite and positive")
+    req = layout.get("requested_sqft")
+    if req is not None and (not math.isfinite(float(req)) or float(req) <= 0):
+        errs.append("Requested house area must be finite and positive")
     add("contract_integrity", errs)
 
     errs = []
@@ -84,9 +93,18 @@ def selfcheck(layout: dict) -> List[dict]:
         r = rects[a]
         if r.x < -TOL or r.y < -TOL or r.x2 > W + TOL or r.y2 > D + TOL or r.w <= 0 or r.h <= 0:
             errs.append(f"{names[a]} extends outside the {W:g}x{D:g} ft footprint")
-    missing = W * D - sum(r.area for r in rects.values())
-    if missing > TOL:
-        errs.append(f"Rooms leave {missing:.1f} sq ft of the footprint uncovered")
+    fp = layout["footprint"]
+    if fp.get("outline"):
+        try:
+            outer, holes = room_outline(rects)
+            if fp["outline"] != outer or fp.get("holes", []) != holes:
+                errs.append("Footprint outline and holes do not match the room union")
+        except ValueError as exc:
+            errs.append(f"Invalid irregular footprint: {exc}")
+    else:
+        missing = W * D - sum(r.area for r in rects.values())
+        if missing > TOL:
+            errs.append(f"Rooms leave {missing:.1f} sq ft of the footprint uncovered")
     add("no_overlap_in_footprint", errs)
 
     good, door_errs = [], []
@@ -104,6 +122,23 @@ def selfcheck(layout: dict) -> List[dict]:
     elif not any(abs(d["x"] - ent.get("x", -1e9)) <= TOL and abs(d["y"] - ent.get("y", -1e9)) <= TOL
                  for d in fronts):
         door_errs.append("The front door doesn't match layout.entrance")
+    valid_windows = set()
+    for w in layout.get("windows", []):
+        rid = w.get("room")
+        r = rects.get(rid)
+        side = w.get("wall")
+        offset, width = w.get("offset_ft"), w.get("width_ft")
+        edge = next((e for e in exterior_edges(r, W, D, rects.values()) if e[0] == side
+                     and offset is not None and isinstance(offset, (int, float))
+                     and offset >= e[3] - (r.x if side in ("north", "south") else r.y) - TOL
+                     and offset + (width if isinstance(width, (int, float)) else 0) <=
+                     e[4] - (r.x if side in ("north", "south") else r.y) + TOL), None) if r else None
+        if (edge is None or not isinstance(offset, (int, float)) or not isinstance(width, (int, float))
+                or not math.isfinite(offset) or not math.isfinite(width) or width <= 0
+                or offset < -TOL):
+            door_errs.append(f"Window for {rid} on {side} wall must fit entirely on that room's exterior wall")
+        else:
+            valid_windows.add(rid)
 
     graph = {k: set() for k in rects}
     graph[EXTERIOR] = set()
@@ -131,10 +166,12 @@ def selfcheck(layout: dict) -> List[dict]:
     errs_bed = []
     for k in rects:
         if types[k] in BEDROOMS:
-            if not exterior_edges(rects[k], W, D):
+            if not exterior_edges(rects[k], W, D, rects.values()):
                 errs_bed.append(f"{names[k]} has no exterior wall (needs one for a window)")
             if not graph[k]:
                 errs_bed.append(f"{names[k]} has no door")
+            if "windows" in layout and k not in valid_windows:
+                errs_bed.append(f"{names[k]} has no valid exterior window")
     add("bedroom_exterior_wall", errs_bed)
 
     baths = [k for k in rects if types[k] == "bathroom"]
@@ -173,7 +210,7 @@ def selfcheck(layout: dict) -> List[dict]:
             errs.append(f"{names[r['id']]} is {area:.0f} sq ft but was asked to be {t:.0f} (more than 10% off)")
     req = layout.get("requested_sqft")
     if req:
-        total = W * D
+        total = sum(r.area for r in rects.values()) if layout["footprint"].get("outline") else W * D
         if abs(total - req) / req > SIZE_TOL:
             errs.append(f"House is {total:.0f} sq ft but {req:.0f} was requested (more than 10% off)")
     add("sizes_within_10pct", errs)
