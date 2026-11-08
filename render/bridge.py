@@ -92,6 +92,56 @@ def run_node(job, nid, payload, quality, then_hq=False):
         save(job)
 
 
+def _inside(pt, r):
+    return r["x"] - 0.01 <= pt[0] <= r["x"] + r["w"] + 0.01 and r["y"] - 0.01 <= pt[1] <= r["y"] + r["h"] + 0.01
+
+
+def room_signatures(scene):
+    """What a room's panorama depends on: its own rectangle, the furniture in it, its openings, and
+    the rectangles of the rooms it opens onto (seen through doors). Rooms whose signature did not
+    change between two layouts can keep their rendered panorama."""
+    L = scene["layout"]
+    rooms = {r["id"]: r for r in L["rooms"]}
+    doors = L.get("doors", [])
+    neigh = {rid: set() for rid in rooms}
+    for d in doors:
+        a, b = (d.get("between") or ["", ""])[:2]
+        if a in rooms and b in rooms:
+            neigh[a].add(b); neigh[b].add(a)
+    for e in L.get("open", []) or []:  # open-plan edges, if the exporter sends them
+        if isinstance(e, (list, tuple)) and len(e) >= 2 and e[0] in rooms and e[1] in rooms:
+            neigh[e[0]].add(e[1]); neigh[e[1]].add(e[0])
+    def box(r):
+        return [r["x"], r["y"], r["w"], r["h"], r.get("type")]
+    def items_in(rid):
+        r = rooms[rid]
+        out = []
+        for it in scene.get("items", []) or []:
+            pos = it.get("pos") or it.get("at") or [it.get("x"), it.get("y")]
+            if it.get("room") == rid or (pos and None not in pos[:2] and _inside(pos[:2], r)):
+                out.append(it)
+        return out
+    sig = {}
+    for rid, r in rooms.items():
+        sig[rid] = hashlib.sha1(json.dumps({
+            "room": box(r),
+            "items": items_in(rid),
+            "parts": [pt for pt in (scene.get("parts") or []) if isinstance(pt, dict) and pt.get("room") == rid],
+            "doors": sorted(json.dumps(d, sort_keys=True) for d in doors if rid in (d.get("between") or [])),
+            "windows": sorted(json.dumps(w, sort_keys=True) for w in L.get("windows", []) if w.get("room") == rid),
+            "neighbors": sorted(box(rooms[n]) for n in neigh[rid]),
+        }, sort_keys=True).encode()).hexdigest()
+    return sig
+
+
+def _load_job(key):
+    job = JOBS.get(key)
+    if job is None:
+        p = OUT / key / "status.json"
+        job = json.loads(p.read_text()) if p.exists() else None
+    return job
+
+
 def start_job(payload):
     quality = payload.get("quality", "auto")
     if quality not in QUALITY and quality != "auto":
@@ -114,11 +164,26 @@ def start_job(payload):
         job = {"job": key, "quality": quality, "status": "rendering", "created": time.time(), "tour": tour,
                "nodes": {nid: {"state": "queued", "label": s["label"], **({"hq_state": "queued"} if quality == "auto" else {})}
                          for nid, s in tour["scenes"].items()},
-               "base": f"{PUBLIC}/{key}/"}
+               "base": f"{PUBLIC}/{key}/", "scene": scene, "sig": room_signatures(scene), "reused": []}
+        # Incremental re-render: rooms whose view did not change since the previous job keep their panoramas.
+        prev = _load_job(payload["prev"]) if payload.get("prev") and payload["prev"] != key else None
+        if prev and prev.get("sig") and prev.get("quality") == quality:
+            for nid, s in tour["scenes"].items():
+                pn = prev["nodes"].get(nid)
+                same_spot = nid in prev["tour"]["scenes"] and [round(v, 2) for v in (s["x"], s["y"])] == [round(v, 2) for v in (prev["tour"]["scenes"][nid]["x"], prev["tour"]["scenes"][nid]["y"])]
+                if pn and pn.get("state") == "done" and prev["sig"].get(nid) == job["sig"][nid] and same_spot:
+                    job["nodes"][nid] = {**pn, "reused_from": prev["job"]}
+                    job["reused"].append(nid)
         JOBS[key] = job
         save(job)
     # start with the start room so the viewer can open as early as possible
     order = [tour["start"]] + [n for n in tour["scenes"] if n != tour["start"]]
+    order = [n for n in order if n not in job["reused"]]
+    if not order:
+        with LOCK:
+            job["status"] = "done"
+            save(job)
+        return job
     for nid in order:
         if quality == "auto":
             POOL.submit(run_node, job, nid, scene, "preview", True)

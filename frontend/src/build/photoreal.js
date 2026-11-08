@@ -138,7 +138,8 @@ function createController(getScene) {
     if (online !== true && Date.now() - onlineAt > 10000) { onlineAt = Date.now(); online = await bridgeOnline(); }
     if (!online) { emit(); return; }
     const { layout, furniture } = getScene();
-    const payload = { ...exportScene(layout, furniture), quality };
+    // prev: the bridge reuses panoramas of rooms whose view did not change since the last job
+    const payload = { ...exportScene(layout, furniture), quality, prev: job?.job ?? null };
     sceneKey = keyOf(payload); stale = false; arrSig = JSON.stringify(furniture.getArrangement?.() ?? []);
     job = await bridge("/render", payload);
     emit(); tick();
@@ -264,7 +265,7 @@ function createController(getScene) {
     list.innerHTML = Object.entries(job.tour.scenes).map(([id, s]) => {
       const n = job.nodes[id], d = n.state === "done";
       const secs = n.started && !d ? Math.round(Date.now() / 1000 - n.started) : null;
-      const sub = d ? (n.hq ? `4K · ${n.hq_seconds ?? ""} s on GPU` : n.hq_state === "rendering" || n.hq_state === "queued" ? "preview · sharpening" : `${n.seconds ?? ""} s on GPU`) : n.state === "error" ? "failed" : n.state === "rendering" ? `rendering${secs ? ` · ${secs}s` : ""}` : "queued";
+      const sub = d ? (n.reused_from ? (n.hq ? "4K · unchanged, kept" : "kept from last render") : n.hq ? `4K · ${n.hq_seconds ?? ""} s on GPU` : n.hq_state === "rendering" || n.hq_state === "queued" ? "preview · sharpening" : `${n.seconds ?? ""} s on GPU`) : n.state === "error" ? "failed" : n.state === "rendering" ? `rendering${secs ? ` · ${secs}s` : ""}` : "queued";
       return `<button type="button" data-id="${id}" ${d ? "" : "disabled"} aria-current="${id === current}"><div class="th" style="${d ? `background-image:url(${n.url})` : ""}">${d ? "" : "<i></i>"}</div><div>${s.label}<small>${sub}</small></div></button>`;
     }).join("");
     list.querySelectorAll("button:not([disabled])").forEach((b) => b.addEventListener("click", () => viewer?.loadScene(b.dataset.id)));
