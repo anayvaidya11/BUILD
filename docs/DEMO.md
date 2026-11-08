@@ -1,5 +1,9 @@
 # Walkthru demo runbook
 
+Open [`demo-deck.html`](demo-deck.html) in a browser for the five-slide deck.
+Use the left and right arrow keys to navigate; browser Print can export it
+as a PDF. Slide 3 cues the live product demo, and slide 4 holds the proof number.
+
 ## Release checks
 
 Run these after the solver and checker are both on `main`:
@@ -11,10 +15,12 @@ cd backend
 ```
 
 The backup check requires three distinct, valid files: `3bed_office.json`,
-`2bed_cottage.json`, and `4bed_family.json`. If they are missing, export
-`ANTHROPIC_API_KEY` and run `.venv/bin/python cached/build_backups.py`, then
-rerun `--check`. Commit the JSON files before deploying. A missing key cannot
-be replaced with three copies of the offline sample.
+`2bed_cottage.json`, and `4bed_family.json`. If they are missing, run
+`.venv/bin/python cached/build_backups.py --offline` to build curated layouts,
+or export `ANTHROPIC_API_KEY` and run the script without `--offline` to use
+live Claude generations. Rerun `--check` and commit the JSON files before
+deploying. Identify the offline builds as curated backups if they appear in
+the demo.
 
 After deployment, set `API_URL` to the Render service URL and check the live
 service. Confirm the returned layouts have no failing checks and that the backup
@@ -52,9 +58,20 @@ If the API or network fails, use the cached endpoint and say so aloud.
 
 ## Proof slide and rehearsal
 
-The proof slide needs the **final** evaluation after the stricter checker and
-solver refresh land. The earlier 73% raw versus 0% pipeline figure used the old
-checker and should not be labeled as the final result. Run from `backend/`:
+The [final 30-prompt rerun](eval/README.md) used the stricter checker and
+refreshed solver on `main` at `c481fc0`. The [per-prompt results](eval/results-2026-11-08.json)
+are committed for review:
+
+| Measure | Raw Claude geometry | Walkthru pipeline |
+|---|---:|---:|
+| Plans with a rule violation | 22/30 (73%) | 0/30 (0%) |
+| Mean time | 19.3 s | 8.0 s |
+| Generation errors | — | 0 |
+
+All 30 pipeline plans passed on the first attempt; 25 needed no checker fix,
+four needed one, and one needed two. The slide headline is: **73% violated a
+layout rule with raw Claude; 0% did with Walkthru.** State `n=30` on the slide.
+To rerun from `backend/` with a live Anthropic key:
 
 ```bash
 .venv/bin/python -m eval.run_eval --mode both --n 30

@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Walkthru — Demo deck</title>
+  <style>
+    :root { color-scheme: dark; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #09131b; color: #f2f5ef; }
+    main { min-height: 100vh; }
+    section { display: none; min-height: 100vh; padding: clamp(2rem, 6vw, 6rem); align-items: center; }
+    section.active { display: flex; }
+    .inner { width: min(1180px, 100%); margin: auto; }
+    .eyebrow { color: #9ee0b5; font-size: clamp(.8rem, 1.4vw, 1rem); font-weight: 700; letter-spacing: .18em; text-transform: uppercase; }
+    h1, h2, p { margin: 0; }
+    h1 { font-size: clamp(4rem, 10vw, 9rem); line-height: .94; letter-spacing: -.075em; }
+    h2 { font-size: clamp(2.8rem, 6vw, 5.6rem); line-height: 1.03; letter-spacing: -.055em; max-width: 1000px; }
+    .lead { font-size: clamp(1.35rem, 2.7vw, 2.35rem); line-height: 1.35; max-width: 850px; margin-top: 2rem; color: #cbd8d1; }
+    .accent { color: #9ee0b5; }
+    .tag { display: inline-block; margin-top: 2.5rem; padding: .7rem 1rem; border: 1px solid #507061; border-radius: 999px; color: #cbd8d1; font-size: 1rem; }
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-top: 3rem; }
+    .card { padding: 1.6rem; min-height: 220px; background: #14242b; border: 1px solid #315046; border-radius: 20px; }
+    .card .num { color: #9ee0b5; font-size: 1rem; font-weight: 800; }
+    .card h3 { font-size: clamp(1.3rem, 2.4vw, 2rem); margin: 1rem 0 .7rem; }
+    .card p { color: #cbd8d1; font-size: clamp(1rem, 1.6vw, 1.2rem); line-height: 1.4; }
+    .proof { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 2.5rem 0 1.4rem; }
+    .metric { padding: 1.5rem 2rem; border-radius: 22px; background: #14242b; border: 1px solid #315046; }
+    .metric strong { display: block; font-size: clamp(4rem, 10vw, 8rem); line-height: 1; letter-spacing: -.08em; }
+    .metric span { font-size: clamp(1rem, 2vw, 1.5rem); color: #cbd8d1; }
+    .metric.walkthru { background: #17362c; border-color: #72b890; }
+    .small { color: #a9bcb4; font-size: clamp(.9rem, 1.3vw, 1rem); line-height: 1.5; }
+    .small a { color: #b4eccc; }
+    .nav { position: fixed; bottom: 1.2rem; right: 1.5rem; color: #a9bcb4; font-size: .9rem; }
+    @media (max-width: 700px) { .steps, .proof { grid-template-columns: 1fr; } .card { min-height: 0; } }
+    @media print { section { display: flex !important; height: 100vh; break-after: page; } .nav { display: none; } }
+  </style>
+</head>
+<body>
+  <main>
+    <section class="active" aria-label="Slide 1: Walkthru">
+      <div class="inner">
+        <p class="eyebrow">Imagine your home before it exists</p>
+        <h1>Walk<span class="accent">thru.</span></h1>
+        <p class="lead">Describe a home. See a rule-checked floor plan. Walk through it in 3D.</p>
+      </div>
+    </section>
+    <section aria-label="Slide 2: The problem">
+      <div class="inner">
+        <p class="eyebrow">The problem</p>
+        <h2>A floor plan is hard to picture until you can <span class="accent">step inside.</span></h2>
+        <p class="lead">Early home ideas need a fast way to become a spatial, editable plan.</p>
+      </div>
+    </section>
+    <section aria-label="Slide 3: How Walkthru works">
+      <div class="inner">
+        <p class="eyebrow">From words to a walkable home</p>
+        <h2>One prompt. One layout. Two views.</h2>
+        <div class="steps">
+          <div class="card"><span class="num">01</span><h3>Plan</h3><p>Claude turns the request into rooms and sizes.</p></div>
+          <div class="card"><span class="num">02</span><h3>Place and check</h3><p>The solver places walls and doors; rule checks reject invalid plans.</p></div>
+          <div class="card"><span class="num">03</span><h3>Explore and edit</h3><p>See the 2D plan and 3D walkthrough, then change it with words.</p></div>
+        </div>
+        <p class="tag">Switch to the live product demo here</p>
+      </div>
+    </section>
+    <section aria-label="Slide 4: Evaluation results">
+      <div class="inner">
+        <p class="eyebrow">30-prompt evaluation</p>
+        <h2>Plans that broke a layout rule</h2>
+        <div class="proof">
+          <div class="metric"><strong>73%</strong><span>Raw Claude geometry · 22 of 30</span></div>
+          <div class="metric walkthru"><strong>0%</strong><span>Walkthru pipeline · 0 of 30</span></div>
+        </div>
+        <p class="lead" style="margin:0 0 1rem">Mean generation time: 19.3 s raw, 8.0 s with Walkthru.</p>
+        <p class="small">Stricter checker and refreshed solver on main at c481fc0. Pipeline: 0 generation errors; all 30 plans passed on the first attempt. <a href="eval/README.md">Evaluation report and per-prompt results</a>.</p>
+      </div>
+    </section>
+    <section aria-label="Slide 5: Closing">
+      <div class="inner">
+        <p class="eyebrow">Walkthru</p>
+        <h2>Make the first version of a home <span class="accent">easy to see and change.</span></h2>
+        <p class="lead">From a sentence to a checked plan you can explore.</p>
+      </div>
+    </section>
+  </main>
+  <div class="nav" aria-live="polite">1 / 5 · ← → to navigate</div>
+  <script>
+    const slides = [...document.querySelectorAll('main section')];
+    const nav = document.querySelector('.nav');
+    let current = 0;
+    function show(index) {
+      current = Math.max(0, Math.min(slides.length - 1, index));
+      slides.forEach((slide, i) => slide.classList.toggle('active', i === current));
+      nav.textContent = `${current + 1} / ${slides.length} · ← → to navigate`;
+    }
+    addEventListener('keydown', event => {
+      if (['ArrowRight', 'PageDown', ' '].includes(event.key)) { event.preventDefault(); show(current + 1); }
+      if (['ArrowLeft', 'PageUp'].includes(event.key)) { event.preventDefault(); show(current - 1); }
+    });
+  </script>
+</body>
+</html>

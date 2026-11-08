@@ -93,5 +93,7 @@ GenerateResponse = {
 }
 ```
 
-On generation failure the API serves a random file from `backend/cached/` with `cached: true`
-(disable with `WALKTHRU_CACHE_FALLBACK=0`).
+On generation failure the API serves a validated file from `backend/cached/`
+with `cached: true` (disable with `WALKTHRU_CACHE_FALLBACK=0`). It prefers a
+backup matching explicit bedroom, bathroom, office, and square-footage requests;
+if none match, it chooses any valid backup. `?cached=true` uses the same selection.

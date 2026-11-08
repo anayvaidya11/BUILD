@@ -110,7 +110,7 @@ curl -s localhost:8000/api/generate -H 'content-type: application/json' \
 
 The repository root contains `render.yaml` for a Python web service rooted at `backend/`. In the Render Blueprint setup, provide `ANTHROPIC_API_KEY` and set `WALKTHRU_CORS` to the deployed frontend origin (for example, `https://your-site.example`). Render starts Uvicorn on its assigned port and checks `/health`. After deployment, verify `/health`, `/api/sample`, and a live `/api/generate` response. The frontend's `NEXT_PUBLIC_API_URL` must point to the Render service URL.
 
-The cache path serves only backups that pass the current checker. Build three distinct backups with `python cached/build_backups.py` from `backend/` after the solver and planner are integrated; see `backend/cached/README.md`.
+The cache path serves only backups that pass the current checker. Three distinct, validated curated backups are committed for the demo. Rebuild them with `python cached/build_backups.py --offline` from `backend/`, or run without `--offline` when an Anthropic key is available to capture live generations. See `backend/cached/README.md` and `docs/DEMO.md`.
 
 ## Timeline gates
 
