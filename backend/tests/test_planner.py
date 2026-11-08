@@ -118,6 +118,20 @@ def test_tidy_makes_adjacency_symmetric_and_drops_halls():
     assert "kitchen" in next(r for r in p.rooms if r.id == "dining").adjacent_to
 
 
+def test_undersized_program_is_rescaled_without_a_claude_call(fake):
+    p = three_bed_program()
+    for r in p.rooms:
+        r.target_sqft *= 0.85  # rooms ~74% of requested, like the live run's 78%
+    p.rooms.append(RoomSpec(id="half_bath", type="bathroom", name="Half Bath", target_sqft=35))
+    client = fake(p)
+    program = planner.plan(PROMPT.replace("2 bath", "2.5 bath"))
+    assert len(client.prompts) == 1  # no repair round needed
+    share = sum(r.target_sqft for r in program.rooms) / program.requested_sqft
+    assert 0.85 <= share <= 0.91
+    c = requirements.count(program.rooms)
+    assert (c.full_baths, c.half_baths) == (2, 1)  # scaling kept the half bath a half bath
+
+
 def test_fix_keeps_the_original_requirements(fake):
     fake(three_bed_program())
     program = planner.plan(PROMPT)

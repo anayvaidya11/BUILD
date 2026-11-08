@@ -31,7 +31,7 @@ EFFORT = os.environ.get("WALKTHRU_EFFORT", "low")  # low keeps prompt->plan unde
 PREFLIGHT_FIXES = 2  # Claude calls allowed to repair a program before it reaches the solver
 
 # Room targets as a share of requested_sqft; the rest is the solver's hallway.
-ROOM_SHARE_MIN, ROOM_SHARE_MAX = 0.80, 0.95
+ROOM_SHARE_MIN, ROOM_SHARE_MAX, ROOM_SHARE_TARGET = 0.80, 0.95, 0.88
 MIN_SQFT = {"bedroom": 70, "primary_bedroom": 120, "bathroom": 18, "kitchen": 70, "living": 120, "dining": 70, "office": 50}
 
 log = logging.getLogger("walkthru.planner")
@@ -112,6 +112,29 @@ def tidy(program: RoomProgram) -> RoomProgram:
     for r in program.rooms:
         r.adjacent_to = sorted(adj[r.id])
     program.aspect_ratio = min(max(program.aspect_ratio, 1.0), 2.0)
+    return rescale(program)
+
+
+def rescale(program: RoomProgram) -> RoomProgram:
+    """If room targets don't leave the right share for hallways, scale them all proportionally.
+
+    Pure arithmetic, so it's cheaper to do here than to spend a Claude round on it.
+    Rooms keep their relative sizes; each target is rounded to 5 sq ft.
+    """
+    total = sum(r.target_sqft for r in program.rooms)
+    if total <= 0 or program.requested_sqft <= 0:
+        return program
+    share = total / program.requested_sqft
+    if ROOM_SHARE_MIN <= share <= ROOM_SHARE_MAX:
+        return program
+    k = ROOM_SHARE_TARGET / share
+    half = requirements.HALF_BATH_MAX_SQFT
+    for r in program.rooms:
+        new = max(5.0, round(r.target_sqft * k / 5) * 5)
+        if r.type == "bathroom":  # scaling must not turn a half bath into a full one or back
+            new = min(new, half - 5) if r.target_sqft < half else max(new, half)
+        r.target_sqft = new
+    log.info("rescaled room targets x%.2f (rooms were %.0f%% of requested)", k, 100 * share)
     return program
 
 
