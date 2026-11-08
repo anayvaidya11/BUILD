@@ -23,8 +23,10 @@ deploying. Identify the offline builds as curated backups if they appear in
 the demo.
 
 After deployment, set `API_URL` to the Render service URL and check the live
-service. Confirm the returned layouts have no failing checks and that the backup
-response says `cached: true`.
+service. The Blueprint uses Render's free plan, which spins down when idle;
+call `/health` shortly before the demo and confirm it is warm. Confirm the
+returned layouts have no failing checks and that the backup response says
+`cached: true`.
 
 ```bash
 curl -fsS "$API_URL/health"
