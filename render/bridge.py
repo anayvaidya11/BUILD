@@ -34,7 +34,7 @@ PUBLIC = os.environ.get("BRIDGE_PUBLIC", f"http://127.0.0.1:{PORT}") + "/renders
 # 512, about 3x faster per room with no visible noise indoors. QUALITY_VERSION busts cached jobs.
 QUALITY = {"test": (1024, 32, 0.02), "preview": (2048, 64, 0.02), "final": (4096, 128, 0.01)}
 QUALITY_VERSION = 3
-PARALLEL_HQ_MAX = 6  # with this many rooms or fewer to render, start the 4K pass alongside the preview
+PARALLEL_HQ_MAX = 6  # edits: preview and 4K together; whole houses: 4K after previews (all-parallel starved previews at ~12 GPUs)
 JOBS = {}
 LOCK = threading.Lock()
 POOL = ThreadPoolExecutor(max_workers=24)
