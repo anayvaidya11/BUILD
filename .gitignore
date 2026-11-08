@@ -20,3 +20,6 @@ backend/eval/results.json
 
 # agent board state (per clone)
 .board/
+
+# photoreal tour renders + debug payloads (regenerated on demand)
+render/out/

@@ -40,6 +40,27 @@ npm run dev                       # http://localhost:3000
 The page loads `/api/sample` on start and falls back to the bundled
 `src/lib/sample-layout.json` if the backend is down.
 
+## The app (Site model)
+
+`frontend/` is the build app: describe a home, watch it get planned and assembled on a floating
+island model, then edit it, drag furniture between rooms, walk through it, view it on a real lot
+("On site", Google 3D tiles) or open a photoreal Blender Cycles tour.
+
+- Scene engine: `frontend/src/build/` (plain JS + three.js). `siteModelApp.js` is the page logic,
+  `core.js` builds the house and furniture from the layout JSON, `planner.js` is an offline
+  fallback planner used only when the API can't be reached.
+- Generation and edits call the FastAPI backend (`NEXT_PUBLIC_API_URL`). The loading story replays
+  the real checker rounds from the response; backup generations are labelled as such.
+- Photoreal tour (optional): `render/blender_render.py` is a Modal app (`modal deploy render/blender_render.py`,
+  reuses the `house-assets` volume) and `render/bridge.py` is a local server the app talks to:
+
+```bash
+python3 render/bridge.py          # http://127.0.0.1:8790, needs a logged-in Modal client
+```
+
+Each room renders on its own L40S (fast preview, then an automatic 4K pass). Without the bridge the
+button reads "Photoreal offline".
+
 ## What works today (baseline, hour 0)
 
 Every stage runs end to end with a deliberately simple implementation. Each owner replaces
