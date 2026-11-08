@@ -62,8 +62,8 @@ async function bridge(path, body) {
   if (!r.ok && r.status !== 404) throw new Error(`bridge ${r.status}`);
   return r.json();
 }
-export async function bridgeOnline() {
-  try { const c = new AbortController(); setTimeout(() => c.abort(), 1200); const r = await fetch(BRIDGE + "/health", { signal: c.signal }); return r.ok; } catch { return false; }
+export async function bridgeOnline(timeoutMs = 6000) {
+  try { const c = new AbortController(); setTimeout(() => c.abort(), timeoutMs); const r = await fetch(BRIDGE + "/health", { signal: c.signal }); return r.ok; } catch { return false; }
 }
 
 // ---------- styles ----------
@@ -131,8 +131,11 @@ function createController(getScene) {
   const keyOf = (s) => JSON.stringify(s.layout.rooms.map((r) => [r.id, r.x, r.y, r.w, r.h]));
   const counts = () => { const n = Object.values(job?.nodes ?? {}); return { done: n.filter((x) => x.state === "done").length, total: n.length }; };
 
+  let onlineAt = 0;
   async function start(quality = "auto") {
-    if (online === null) online = await bridgeOnline();
+    // a hosted bridge can be slow to answer right after a deploy: re-probe every 10 s instead of
+    // treating one failed probe as "offline" for the rest of the session
+    if (online !== true && Date.now() - onlineAt > 10000) { onlineAt = Date.now(); online = await bridgeOnline(); }
     if (!online) { emit(); return; }
     const { layout, furniture } = getScene();
     const payload = { ...exportScene(layout, furniture), quality };
@@ -202,10 +205,10 @@ function createController(getScene) {
     cssClass: "pr-hs" + (ready ? "" : " pending"), id: `to-${link.to}`,
     createTooltipFunc: (div) => { const s = document.createElement("span"); s.textContent = ready ? link.label : `${link.label} · rendering`; div.appendChild(s); },
   });
-  function sceneConfig(id) {
+  function sceneConfig(id, extra = {}) {
     const s = job.tour.scenes[id], n = job.nodes[id];
     return { type: "equirectangular", panorama: new URL(n.url, location.href).href, hfov: 90, yaw: s.links[0]?.yaw ?? 0, pitch: -4,
-      hotSpots: s.links.map((l) => hs(l, job.nodes[l.to]?.state === "done")) };
+      hotSpots: s.links.map((l) => hs(l, job.nodes[l.to]?.state === "done")), ...extra };
   }
   const added = new Set(), shown = {};
   function syncViewer(force) {
@@ -237,7 +240,9 @@ function createController(getScene) {
       // 4K pass landed for a room already in the tour: swap the image in place, keep the view
       for (const id of ready) if (added.has(id) && shown[id] !== job.nodes[id].url) {
         shown[id] = job.nodes[id].url;
-        viewer.addScene(id, sceneConfig(id));
+        // no crossfade for the swap: Pannellum's fade snapshots the canvas to an <img>, which fails on
+        // high-DPI canvases and leaves a blank layer over the view
+        viewer.addScene(id, sceneConfig(id, { sceneFadeDuration: 0 }));
         if (id === current) viewer.loadScene(id, viewer.getPitch(), viewer.getYaw(), viewer.getHfov());
       }
       for (const id of ready) if (!added.has(id)) {
@@ -284,6 +289,7 @@ function createController(getScene) {
       const s = getScene(); if (!s?.layout || !s?.furniture) return;
       const key = keyOf({ layout: s.layout });
       if (key === sceneKey && job) return;
+      if (online !== true && Date.now() - onlineAt <= 10000) return; // probe cooldown
       viewer?.destroy?.(); viewer = null; added.clear(); current = null;
       await start("auto");
     },

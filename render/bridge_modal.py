@@ -43,9 +43,10 @@ renders = modal.Volume.from_name("build-renders", create_if_missing=True)
     volumes={OUT_DIR: renders},
     timeout=24 * 3600,
     scaledown_window=30 * 60,
+    min_containers=1,   # always warm: a cold bridge made the site think Photoreal was offline
     max_containers=1,
-    cpu=2,
-    memory=2048,
+    cpu=1,
+    memory=1024,
 )
 @modal.concurrent(max_inputs=200)
 @modal.web_server(PORT, startup_timeout=120)
